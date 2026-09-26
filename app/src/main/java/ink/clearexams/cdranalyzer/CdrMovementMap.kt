@@ -3,7 +3,6 @@ package ink.clearexams.cdranalyzer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
@@ -16,12 +15,15 @@ import org.osmdroid.views.overlay.Marker
 import org.osmdroid.views.overlay.Polyline
 
 @Composable
-fun CdrMovementMap(points: List<ink.clearexams.cdranalyzer.GeoPoint>) {
-    val context = LocalContext.current
+fun CdrMovementMap(
+    points: List<ink.clearexams.cdranalyzer.GeoPoint>,
+    modifier: Modifier = Modifier
+) {
     if (points.isEmpty()) return
+    val context = LocalContext.current
 
     AndroidView(
-        modifier = Modifier.fillMaxWidth().height(360.dp),
+        modifier = modifier.fillMaxWidth().height(360.dp),
         factory = { ctx ->
             Configuration.getInstance().userAgentValue = ctx.packageName
             MapView(ctx).apply {
