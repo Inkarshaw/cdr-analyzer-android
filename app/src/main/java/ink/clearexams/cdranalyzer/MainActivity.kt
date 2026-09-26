@@ -15,12 +15,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import java.io.InputStream
-import java.time.LocalDateTime
-import java.time.ZoneId
 import org.apache.poi.ss.usermodel.WorkbookFactory
 
-data class CdrRecord(val a:String,val b:String,val c:String,val d:String,val e:String)
-data class Summary(val records:Int=0,val contacts:Int=0,val incoming:Int=0,val outgoing:Int=0)
+data class CdrRecord(val a: String, val b: String, val c: String, val d: String, val e: String)
+data class Summary(val records: Int = 0, val contacts: Int = 0, val incoming: Int = 0, val outgoing: Int = 0)
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -28,42 +26,84 @@ class MainActivity : ComponentActivity() {
         setContent { MaterialTheme { CdrApp() } }
     }
 
+    @OptIn(ExperimentalMaterial3Api::class)
     @Composable
     private fun CdrApp() {
         var rows by remember { mutableStateOf<List<CdrRecord>>(emptyList()) }
         var fileName by remember { mutableStateOf("No CDR loaded") }
         var error by remember { mutableStateOf<String?>(null) }
         var tab by remember { mutableIntStateOf(0) }
+
         val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
-            if (uri != null) try {
-                contentResolver.takePersistableUriPermission(uri, android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                rows = readWorkbook(contentResolver.openInputStream(uri)!!)
-                fileName = uri.lastPathSegment?.substringAfterLast('/') ?: "CDR file"
-                error = null
-            } catch (e: Exception) { error = e.message ?: "Unable to read file" }
+            if (uri != null) {
+                try {
+                    contentResolver.takePersistableUriPermission(uri, android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                    rows = readWorkbook(contentResolver.openInputStream(uri)!!)
+                    fileName = uri.lastPathSegment?.substringAfterLast('/') ?: "CDR file"
+                    error = null
+                } catch (e: Exception) {
+                    error = e.message ?: "Unable to read file"
+                }
+            }
         }
+
         val summary = remember(rows) {
             val contacts = rows.map { it.b }.filter { it.isNotBlank() }.distinct().size
-            Summary(rows.size, contacts, rows.count { it.c.contains("in",true) }, rows.count { it.c.contains("out",true) })
+            Summary(
+                records = rows.size,
+                contacts = contacts,
+                incoming = rows.count { it.c.contains("in", true) },
+                outgoing = rows.count { it.c.contains("out", true) }
+            )
         }
-        Scaffold(topBar={ TopAppBar(title={Column{Text("CDR Analyzer"); Text("Native • Local analysis", style=MaterialTheme.typography.labelSmall)}}) }) { pad ->
+
+        Scaffold(
+            topBar = {
+                TopAppBar(
+                    title = {
+                        Column {
+                            Text("CDR Analyzer")
+                            Text("Native • Local analysis", style = MaterialTheme.typography.labelSmall)
+                        }
+                    }
+                )
+            }
+        ) { pad ->
             Column(Modifier.padding(pad).padding(12.dp).fillMaxSize()) {
-                Button(onClick={picker.launch(arrayOf("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet","application/vnd.ms-excel","text/csv","*/*"))}, modifier=Modifier.fillMaxWidth()) { Text("Import CDR file") }
-                Text(fileName, style=MaterialTheme.typography.bodySmall, modifier=Modifier.padding(vertical=8.dp))
-                error?.let { Text(it, color=MaterialTheme.colorScheme.error) }
-                Row(Modifier.fillMaxWidth(), horizontalArrangement=Arrangement.spacedBy(8.dp)) {
-                    Stat("Records",summary.records.toString(),Modifier.weight(1f)); Stat("Contacts",summary.contacts.toString(),Modifier.weight(1f))
+                Button(
+                    onClick = {
+                        picker.launch(arrayOf(
+                            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                            "application/vnd.ms-excel",
+                            "text/csv",
+                            "*/*"
+                        ))
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                ) { Text("Import CDR file") }
+
+                Text(fileName, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(vertical = 8.dp))
+                error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Stat("Records", summary.records.toString(), Modifier.weight(1f))
+                    Stat("Contacts", summary.contacts.toString(), Modifier.weight(1f))
                 }
                 Spacer(Modifier.height(8.dp))
-                Row(Modifier.fillMaxWidth(), horizontalArrangement=Arrangement.spacedBy(8.dp)) {
-                    Stat("Incoming",summary.incoming.toString(),Modifier.weight(1f)); Stat("Outgoing",summary.outgoing.toString(),Modifier.weight(1f))
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Stat("Incoming", summary.incoming.toString(), Modifier.weight(1f))
+                    Stat("Outgoing", summary.outgoing.toString(), Modifier.weight(1f))
                 }
-                ScrollableTabRow(tab, edgePadding=0.dp, modifier=Modifier.padding(top=12.dp)) {
-                    listOf("Calls","Contacts","Devices","Towers","Movement","Notes").forEachIndexed { i,t -> Tab(tab==i,{tab=i},text={Text(t)}) }
+
+                ScrollableTabRow(selectedTabIndex = tab, edgePadding = 0.dp, modifier = Modifier.padding(top = 12.dp)) {
+                    listOf("Calls", "Contacts", "Devices", "Towers", "Movement", "Notes").forEachIndexed { i, title ->
+                        Tab(selected = tab == i, onClick = { tab = i }, text = { Text(title) })
+                    }
                 }
-                when(tab){
+
+                when (tab) {
                     0 -> RecordList(rows)
-                    1 -> SimpleList(rows.groupingBy{it.b}.eachCount().entries.sortedByDescending{it.value}.map{"${it.key} — ${it.value} records"})
+                    1 -> SimpleList(rows.groupingBy { it.b }.eachCount().entries.sortedByDescending { it.value }.map { "${it.key} — ${it.value} records" })
                     2 -> EmptyFeature("Device / SIM changes", "IMEI and IMSI change detection will appear here after column mapping.")
                     3 -> EmptyFeature("Tower analysis", "Cell ID, LAC and tower-frequency analysis.")
                     4 -> EmptyFeature("Movement", "Chronological tower movement and map-ready coordinates.")
@@ -73,17 +113,67 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    @Composable private fun Stat(label:String,value:String,m:Modifier){ Card(m){Column(Modifier.padding(12.dp)){Text(value,style=MaterialTheme.typography.headlineSmall);Text(label,style=MaterialTheme.typography.labelMedium)}} }
-    @Composable private fun RecordList(rows:List<CdrRecord>){ if(rows.isEmpty()) EmptyFeature("Import a CDR", "Select XLSX/XLS from device storage. Analysis stays on the phone.") else LazyColumn(Modifier.fillMaxSize().padding(top=8.dp)){items(rows.take(500)){r-> ListItem(headlineContent={Text(r.b.ifBlank{"Unknown"})}, supportingContent={Text(listOf(r.a,r.c,r.d,r.e).filter{it.isNotBlank()}.joinToString(" • "))});HorizontalDivider()}} }
-    @Composable private fun SimpleList(lines:List<String>){LazyColumn(Modifier.fillMaxSize().padding(top=8.dp)){items(lines){ListItem(headlineContent={Text(it)});HorizontalDivider()}}}
-    @Composable private fun EmptyFeature(title:String,body:String){Box(Modifier.fillMaxSize(),contentAlignment=Alignment.Center){Column(horizontalAlignment=Alignment.CenterHorizontally){Text(title,style=MaterialTheme.typography.titleMedium);Text(body,style=MaterialTheme.typography.bodySmall,modifier=Modifier.padding(12.dp))}}}
+    @Composable
+    private fun Stat(label: String, value: String, modifier: Modifier) {
+        Card(modifier) {
+            Column(Modifier.padding(12.dp)) {
+                Text(value, style = MaterialTheme.typography.headlineSmall)
+                Text(label, style = MaterialTheme.typography.labelMedium)
+            }
+        }
+    }
+
+    @Composable
+    private fun RecordList(rows: List<CdrRecord>) {
+        if (rows.isEmpty()) {
+            EmptyFeature("Import a CDR", "Select XLSX/XLS from device storage. Analysis stays on the phone.")
+        } else {
+            LazyColumn(Modifier.fillMaxSize().padding(top = 8.dp)) {
+                items(rows.take(500)) { record ->
+                    ListItem(
+                        headlineContent = { Text(record.b.ifBlank { "Unknown" }) },
+                        supportingContent = {
+                            Text(listOf(record.a, record.c, record.d, record.e).filter { it.isNotBlank() }.joinToString(" • "))
+                        }
+                    )
+                    HorizontalDivider()
+                }
+            }
+        }
+    }
+
+    @Composable
+    private fun SimpleList(lines: List<String>) {
+        LazyColumn(Modifier.fillMaxSize().padding(top = 8.dp)) {
+            items(lines) { line ->
+                ListItem(headlineContent = { Text(line) })
+                HorizontalDivider()
+            }
+        }
+    }
+
+    @Composable
+    private fun EmptyFeature(title: String, body: String) {
+        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Text(title, style = MaterialTheme.typography.titleMedium)
+                Text(body, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(12.dp))
+            }
+        }
+    }
 
     private fun readWorkbook(input: InputStream): List<CdrRecord> {
         input.use { stream ->
-            WorkbookFactory.create(stream).use { wb ->
-                val sheet=wb.getSheetAt(0); val out=mutableListOf<CdrRecord>()
-                for(i in 1..sheet.lastRowNum){ val r=sheet.getRow(i)?:continue; fun v(n:Int)=r.getCell(n)?.toString()?.trim().orEmpty(); if((0..4).all{v(it).isBlank()})continue; out += CdrRecord(v(0),v(1),v(2),v(3),v(4)) }
-                return out
+            WorkbookFactory.create(stream).use { workbook ->
+                val sheet = workbook.getSheetAt(0)
+                val output = mutableListOf<CdrRecord>()
+                for (i in 1..sheet.lastRowNum) {
+                    val row = sheet.getRow(i) ?: continue
+                    fun value(n: Int) = row.getCell(n)?.toString()?.trim().orEmpty()
+                    if ((0..4).all { value(it).isBlank() }) continue
+                    output += CdrRecord(value(0), value(1), value(2), value(3), value(4))
+                }
+                return output
             }
         }
     }
