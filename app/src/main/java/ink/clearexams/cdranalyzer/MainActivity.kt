@@ -58,14 +58,30 @@ class MainActivity : ComponentActivity() {
  @Composable private fun DeviceList(rows:List<CdrRecord>){val imeis=rows.filter{it.imei.isNotBlank()}.groupBy{it.imei};if(imeis.isEmpty()){EmptyFeature("Device / SIM changes","No IMEI column was detected in this file.");return};val changes=detectDeviceChanges(rows);LazyColumn(Modifier.fillMaxSize()){item{Text("Detected changes: ${changes.size}",style=MaterialTheme.typography.titleMedium,modifier=Modifier.padding(12.dp))};items(changes){c->ListItem(headlineContent={Text(c.at.ifBlank{"Time unavailable"})},supportingContent={Text("IMEI: ${c.oldImei.ifBlank{"—"}} → ${c.newImei.ifBlank{"—"}}\nIMSI: ${c.oldImsi.ifBlank{"—"}} → ${c.newImsi.ifBlank{"—"}}")});HorizontalDivider()};item{Text("Device usage",style=MaterialTheme.typography.titleMedium,modifier=Modifier.padding(12.dp))};items(imeis.entries.toList()){e->val o=e.value.filter{it.dateTime.isNotBlank()}.sortedBy{it.dateTime};val s=e.value.map{it.imsi}.filter{it.isNotBlank()}.distinct();ListItem(headlineContent={Text("IMEI ${e.key}")},supportingContent={Text("First use: ${o.firstOrNull()?.dateTime?:"Unknown"}\nLast use: ${o.lastOrNull()?.dateTime?:"Unknown"}\nIMSI: ${s.joinToString()}\nRecords: ${e.value.size}")});HorizontalDivider()}}}
  @Composable private fun TowerList(rows:List<CdrRecord>){val t=rows.filter{it.cellId.isNotBlank()}.groupingBy{"${it.lac}/${it.cellId}"}.eachCount().entries.sortedByDescending{it.value};if(t.isEmpty())EmptyFeature("Tower analysis","No Cell ID column was detected.")else SimpleList(t.map{"LAC/Cell ${it.key} — ${it.value} records"})}
 
- @Composable private fun MovementList(rows:List<CdrRecord>){val towerRows=rows.filter{it.cellId.isNotBlank()};if(towerRows.isEmpty()){EmptyFeature("Movement","No tower records were detected in this CDR.");return};val visits=towerVisits(towerRows);val transitions=towerTransitions(towerRows);val points=geoPoints(towerRows);LazyColumn(Modifier.fillMaxSize()){
-  item{Text("Movement summary",style=MaterialTheme.typography.titleMedium,modifier=Modifier.padding(12.dp))}
-  item{Text("Unique towers: ${visits.size} • Tower changes: ${transitions.size} • Mappable records: ${points.size}",modifier=Modifier.padding(horizontal=12.dp,vertical=4.dp))}
-  item{if(points.isEmpty())Text("Map unavailable: no valid latitude/longitude columns were found in this CDR.",modifier=Modifier.padding(12.dp))else Text("Coordinates detected. ${points.map{it.tower}.distinct().size} tower locations are ready for map plotting.",modifier=Modifier.padding(12.dp))}
-  if(points.isNotEmpty()){item{Text("Coordinate trail",style=MaterialTheme.typography.titleMedium,modifier=Modifier.padding(12.dp))};items(points.take(200)){g->ListItem(headlineContent={Text(g.tower)},supportingContent={Text("${g.latitude}, ${g.longitude}\n${g.at.ifBlank{"Time unavailable"}}")});HorizontalDivider()}}
-  item{Text("Frequent / repeated locations",style=MaterialTheme.typography.titleMedium,modifier=Modifier.padding(12.dp))};items(visits.sortedByDescending{it.records}.take(20)){v->ListItem(headlineContent={Text(v.tower)},supportingContent={Text("Records: ${v.records}\nFirst: ${v.first.ifBlank{"Unknown"}}\nLast: ${v.last.ifBlank{"Unknown"}}")});HorizontalDivider()}
-  item{Text("Chronological tower changes",style=MaterialTheme.typography.titleMedium,modifier=Modifier.padding(12.dp))};if(transitions.isEmpty())item{Text("No tower-to-tower change detected.",modifier=Modifier.padding(12.dp))}else items(transitions.take(500)){m->ListItem(headlineContent={Text("${m.from} → ${m.to}")},supportingContent={Text(m.at.ifBlank{"Time unavailable"})});HorizontalDivider()}
- }}
+ @Composable private fun MovementList(rows:List<CdrRecord>){
+  val towerRows=rows.filter{it.cellId.isNotBlank()}
+  if(towerRows.isEmpty()){EmptyFeature("Movement","No tower records were detected in this CDR.");return}
+  val visits=towerVisits(towerRows)
+  val transitions=towerTransitions(towerRows)
+  val points=geoPoints(towerRows)
+  LazyColumn(Modifier.fillMaxSize()){
+   item{Text("Movement summary",style=MaterialTheme.typography.titleMedium,modifier=Modifier.padding(12.dp))}
+   item{Text("Unique towers: ${visits.size} • Tower changes: ${transitions.size} • Mappable records: ${points.size}",modifier=Modifier.padding(horizontal=12.dp,vertical=4.dp))}
+   if(points.isEmpty()){
+    item{Text("Map unavailable: no valid latitude/longitude columns were found in this CDR.",modifier=Modifier.padding(12.dp))}
+   }else{
+    item{Text("CDR movement map",style=MaterialTheme.typography.titleMedium,modifier=Modifier.padding(12.dp))}
+    item{CdrMovementMap(points=points,modifier=Modifier.fillMaxWidth().height(360.dp).padding(horizontal=4.dp))}
+    item{Text("Map uses only coordinates contained in the imported CDR. Tap a tower marker for tower/time details.",style=MaterialTheme.typography.bodySmall,modifier=Modifier.padding(12.dp))}
+    item{Text("Coordinate trail",style=MaterialTheme.typography.titleMedium,modifier=Modifier.padding(12.dp))}
+    items(points.take(200)){g->ListItem(headlineContent={Text(g.tower)},supportingContent={Text("${g.latitude}, ${g.longitude}\n${g.at.ifBlank{"Time unavailable"}}")});HorizontalDivider()}
+   }
+   item{Text("Frequent / repeated locations",style=MaterialTheme.typography.titleMedium,modifier=Modifier.padding(12.dp))}
+   items(visits.sortedByDescending{it.records}.take(20)){v->ListItem(headlineContent={Text(v.tower)},supportingContent={Text("Records: ${v.records}\nFirst: ${v.first.ifBlank{"Unknown"}}\nLast: ${v.last.ifBlank{"Unknown"}}")});HorizontalDivider()}
+   item{Text("Chronological tower changes",style=MaterialTheme.typography.titleMedium,modifier=Modifier.padding(12.dp))}
+   if(transitions.isEmpty())item{Text("No tower-to-tower change detected.",modifier=Modifier.padding(12.dp))}else items(transitions.take(500)){m->ListItem(headlineContent={Text("${m.from} → ${m.to}")},supportingContent={Text(m.at.ifBlank{"Time unavailable"})});HorizontalDivider()}
+  }
+ }
 
  @Composable private fun SimpleList(x:List<String>){LazyColumn(Modifier.fillMaxSize()){items(x){ListItem(headlineContent={Text(it)});HorizontalDivider()}}}
  @Composable private fun EmptyFeature(t:String,b:String){Box(Modifier.fillMaxSize(),contentAlignment=Alignment.Center){Column(horizontalAlignment=Alignment.CenterHorizontally){Text(t,style=MaterialTheme.typography.titleMedium);Text(b,style=MaterialTheme.typography.bodySmall,modifier=Modifier.padding(12.dp))}}}
@@ -92,36 +108,20 @@ class MainActivity : ComponentActivity() {
    longitude=find(h,"towerlongitude","celllongitude","longitude","lng","lon","long")
   )
  }
- private fun readWorkbook(input:InputStream):List<CdrRecord> {
-  input.use { stream ->
-   WorkbookFactory.create(stream).use { workbook ->
+ private fun readWorkbook(input:InputStream):List<CdrRecord>{
+  input.use{stream->
+   WorkbookFactory.create(stream).use{workbook->
     val sheet=workbook.getSheetAt(0)
     val formatter=DataFormatter()
-    val header=sheet.getRow(0) ?: return emptyList()
-    val headers=(0 until header.lastCellNum).map { formatter.formatCellValue(header.getCell(it)).trim() }
+    val header=sheet.getRow(0)?:return emptyList()
+    val headers=(0 until header.lastCellNum).map{formatter.formatCellValue(header.getCell(it)).trim()}
     val map=detect(headers)
     val output=mutableListOf<CdrRecord>()
-    fun cell(row:Row,index:Int):String {
-     return if(index<0) "" else formatter.formatCellValue(row.getCell(index)).trim()
-    }
-    for(index in 1..sheet.lastRowNum) {
-     val row=sheet.getRow(index) ?: continue
-     val record=CdrRecord(
-      number=cell(row,map.number),
-      otherParty=cell(row,map.other),
-      direction=cell(row,map.direction),
-      dateTime=cell(row,map.dateTime),
-      duration=cell(row,map.duration),
-      imei=cell(row,map.imei),
-      imsi=cell(row,map.imsi),
-      cellId=cell(row,map.cell),
-      lac=cell(row,map.lac),
-      latitude=cell(row,map.latitude),
-      longitude=cell(row,map.longitude)
-     )
-     if(listOf(record.number,record.otherParty,record.dateTime,record.imei,record.cellId,record.latitude,record.longitude).any { it.isNotBlank() }) {
-      output.add(record)
-     }
+    fun cell(row:Row,index:Int):String=if(index<0)"" else formatter.formatCellValue(row.getCell(index)).trim()
+    for(index in 1..sheet.lastRowNum){
+     val row=sheet.getRow(index)?:continue
+     val record=CdrRecord(number=cell(row,map.number),otherParty=cell(row,map.other),direction=cell(row,map.direction),dateTime=cell(row,map.dateTime),duration=cell(row,map.duration),imei=cell(row,map.imei),imsi=cell(row,map.imsi),cellId=cell(row,map.cell),lac=cell(row,map.lac),latitude=cell(row,map.latitude),longitude=cell(row,map.longitude))
+     if(listOf(record.number,record.otherParty,record.dateTime,record.imei,record.cellId,record.latitude,record.longitude).any{it.isNotBlank()})output.add(record)
     }
     return output
    }
