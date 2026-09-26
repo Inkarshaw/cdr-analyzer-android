@@ -80,6 +80,59 @@ class MainActivity : ComponentActivity() {
  private fun normalizeDirection(v:String):String{val s=v.lowercase();return when{s.contains("incoming")||s=="in"||s.contains("mti")->"Incoming";s.contains("outgoing")||s=="out"||s.contains("moc")->"Outgoing";s.contains("sms")->"SMS";else->v}}
  private fun norm(v:String)=v.lowercase().replace(" ","").replace("_","").replace("-","").replace(".","")
  private fun find(h:List<String>,vararg n:String):Int{val x=h.map(::norm);return x.indexOfFirst{c->n.any{c.contains(norm(it))}}}
- private fun detect(h:List<String>):ColumnMap{return ColumnMap(number=find(h,"callingnumber","msisdn","anumber","subscriber"),other=find(h,"callednumber","otherparty","bnumber","diallednumber","connectednumber"),direction=find(h,"calltype","direction","type"),dateTime=find(h,"datetime","calltime","starttime","date"),duration=find(h,"duration","callduration"),imei=find(h,"imei"),imsi=find(h,"imsi"),cell=find(h,"cellid","celltower","cgi"),lac=find(h,"lac","locationareacode"),latitude=find(h,"towerlatitude","celllatitude","latitude","lat"),longitude=find(h,"towerlongitude","celllongitude","longitude","lng","lon","long"))}
- private fun readWorkbook(input:InputStream):List<CdrRecord>{input.use{stream->WorkbookFactory.create(stream).use{workbook->val sheet=workbook.getSheetAt(0);val formatter=DataFormatter();val header=sheet.getRow(0)?:return emptyList();val headers=(0 until header.lastCellNum).map{formatter.formatCellValue(header.getCell(it)).trim()};val map=detect(headers);val output=mutableListOf<CdrRecord>();fun cell(row:Row,index:Int):String=if(index<0)"" else formatter.formatCellValue(row.getCell(index)).trim();for(index in 1..sheet.lastRowNum){val row=sheet.getRow(index)?:continue;val record=CdrRecord(number=cell(row,map.number),otherParty=cell(row,map.other),direction=cell(row,map.direction),dateTime=cell(row,map.dateTime),duration=cell(row,map.duration),imei=cell(row,map.imei),imsi=cell(row,map.imsi),cellId=cell(row,map.cell),lac=cell(row,map.lac),latitude=cell(row,map.latitude),longitude=cell(row,map.longitude));if(listOf(record.number,record.otherParty,record.dateTime,record.imei,record.cellId,record.latitude,record.longitude).any{it.isNotBlank()})output.add(record)};return output}}}
+
+ private fun detect(h:List<String>):ColumnMap {
+  return ColumnMap(
+   number=find(h,"callingnumber","msisdn","anumber","subscriber"),
+   other=find(h,"callednumber","otherparty","bnumber","diallednumber","connectednumber"),
+   direction=find(h,"calltype","direction","type"),
+   dateTime=find(h,"datetime","calltime","starttime","date"),
+   duration=find(h,"duration","callduration"),
+   imei=find(h,"imei"),
+   imsi=find(h,"imsi"),
+   cell=find(h,"cellid","celltower","cgi"),
+   lac=find(h,"lac","locationareacode"),
+   latitude=find(h,"towerlatitude","celllatitude","latitude","lat"),
+   longitude=find(h,"towerlongitude","celllongitude","longitude","lng","lon","long")
+  )
+ }
+
+ private fun readWorkbook(input:InputStream):List<CdrRecord> {
+  input.use { stream ->
+   WorkbookFactory.create(stream).use { workbook ->
+    val sheet=workbook.getSheetAt(0)
+    val formatter=DataFormatter()
+    val header=sheet.getRow(0) ?: return emptyList()
+    val headers=(0 until header.lastCellNum).map { index ->
+     formatter.formatCellValue(header.getCell(index)).trim()
+    }
+    val map=detect(headers)
+    val output=mutableListOf<CdrRecord>()
+
+    fun cell(row:Row,index:Int):String {
+     return if(index<0) "" else formatter.formatCellValue(row.getCell(index)).trim()
+    }
+
+    for(index in 1..sheet.lastRowNum) {
+     val row=sheet.getRow(index) ?: continue
+     val record=CdrRecord(
+      number=cell(row,map.number),
+      otherParty=cell(row,map.other),
+      direction=cell(row,map.direction),
+      dateTime=cell(row,map.dateTime),
+      duration=cell(row,map.duration),
+      imei=cell(row,map.imei),
+      imsi=cell(row,map.imsi),
+      cellId=cell(row,map.cell),
+      lac=cell(row,map.lac),
+      latitude=cell(row,map.latitude),
+      longitude=cell(row,map.longitude)
+     )
+     val hasData=listOf(record.number,record.otherParty,record.dateTime,record.imei,record.cellId,record.latitude,record.longitude).any { it.isNotBlank() }
+     if(hasData) output.add(record)
+    }
+    return output
+   }
+  }
+ }
 }
