@@ -1,7 +1,7 @@
 package ink.clearexams.cdranalyzer
 
 import java.text.SimpleDateFormat
-import java.util.Locale
+import java.util.Locale\nimport java.util.Calendar
 import kotlin.math.*
 
 object MovementIntelligence {
@@ -9,7 +9,7 @@ object MovementIntelligence {
     data class TowerVisit(val tower: String, val records: Int, val firstSeen: String, val lastSeen: String, val observedSpanMinutes: Long)
     data class Transition(val fromTower: String, val toTower: String, val at: String, val gapMinutes: Long?, val distanceKm: Double? = null, val impliedSpeedKmh: Double? = null)
     enum class AnomalyType { RAPID_CHANGE, LONG_GAP, RETURN_PATTERN }
-    data class MovementAnomaly(val type: AnomalyType, val title: String, val detail: String, val at: String, val towers: List<String>)
+    data class MovementAnomaly(val type: AnomalyType, val title: String, val detail: String, val at: String, val towers: List<String>)\n    data class TimePeriodSummary(val label: String, val observations: Int, val topTower: String?, val topTowerRecords: Int)
     data class Metrics(
         val mappedObservations: Int,
         val uniqueTowers: Int,
@@ -19,7 +19,7 @@ object MovementIntelligence {
         val mostObservedTower: String?,
         val mostObservedTowerRecords: Int
     )
-    data class Summary(val visits: List<TowerVisit>, val transitions: List<Transition>, val repeatedTowers: Int, val anomalies: List<MovementAnomaly> = emptyList(), val metrics: Metrics = Metrics(0,0,0,0.0,0,null,0))
+    data class Summary(val visits: List<TowerVisit>, val transitions: List<Transition>, val repeatedTowers: Int, val anomalies: List<MovementAnomaly> = emptyList(), val metrics: Metrics = Metrics(0,0,0,0.0,0,null,0), val timePeriods: List<TimePeriodSummary> = emptyList())
 
     fun build(points: List<GeoPoint>, thresholds: Thresholds = Thresholds()): Summary {
         val rapidDistance = thresholds.rapidDistanceKm.coerceAtLeast(0.1); val rapidWindow = thresholds.rapidWindowMinutes.coerceAtLeast(1); val longGap = thresholds.longGapMinutes.coerceAtLeast(1); val returnWindow = thresholds.returnWindowMinutes.coerceAtLeast(1)
@@ -35,7 +35,7 @@ object MovementIntelligence {
         return Summary(visits,transitions,visits.count{it.records>1},anomalies.distinctBy{"${it.type}|${it.at}|${it.towers.joinToString()}"},metrics)
     }
 
-    private fun haversineKm(lat1:Double,lon1:Double,lat2:Double,lon2:Double):Double{val r=6371.0088;val dLat=Math.toRadians(lat2-lat1);val dLon=Math.toRadians(lon2-lon1);val a=sin(dLat/2).pow(2)+cos(Math.toRadians(lat1))*cos(Math.toRadians(lat2))*sin(dLon/2).pow(2);return 2*r*asin(sqrt(a.coerceIn(0.0,1.0)))}
+    private fun timePeriod(epochMillis:Long):String { val hour=Calendar.getInstance().apply{timeInMillis=epochMillis}.get(Calendar.HOUR_OF_DAY); return when(hour){ in 6..11 -> "Morning"; in 12..16 -> "Afternoon"; in 17..21 -> "Evening"; else -> "Night" } }\n    private fun haversineKm(lat1:Double,lon1:Double,lat2:Double,lon2:Double):Double{val r=6371.0088;val dLat=Math.toRadians(lat2-lat1);val dLon=Math.toRadians(lon2-lon1);val a=sin(dLat/2).pow(2)+cos(Math.toRadians(lat1))*cos(Math.toRadians(lat2))*sin(dLon/2).pow(2);return 2*r*asin(sqrt(a.coerceIn(0.0,1.0)))}
     private fun towerKey(point:GeoPoint):String=point.tower.ifBlank{"${"%.5f".format(Locale.US,point.latitude)}, ${"%.5f".format(Locale.US,point.longitude)}"}
     private fun parse(value:String):Long?{for(pattern in listOf("dd-MM-yyyy HH:mm","dd/MM/yyyy HH:mm","yyyy-MM-dd HH:mm","dd-MM-yyyy HH:mm:ss","dd/MM/yyyy HH:mm:ss","yyyy-MM-dd HH:mm:ss")){val result=runCatching{SimpleDateFormat(pattern,Locale.US).apply{isLenient=false}.parse(value.trim())?.time}.getOrNull();if(result!=null)return result};return null}
 }
