@@ -14,19 +14,53 @@ import org.osmdroid.util.GeoPoint as OsmGeoPoint
 import org.osmdroid.views.MapView
 import org.osmdroid.views.overlay.Marker
 import org.osmdroid.views.overlay.Polyline
+import java.text.SimpleDateFormat
+import java.util.Locale
 
 @Composable
 fun CdrMovementMap(points: List<GeoPoint>, modifier: Modifier = Modifier) {
     if (points.isEmpty()) return
     val context = LocalContext.current
+    var fromText by remember(points) { mutableStateOf("") }
+    var toText by remember(points) { mutableStateOf("") }
     var playing by remember(points) { mutableStateOf(false) }
-    var step by remember(points) { mutableIntStateOf(points.lastIndex) }
     var mapRef by remember { mutableStateOf<MapView?>(null) }
 
-    LaunchedEffect(playing, points) {
-        if (!playing) return@LaunchedEffect
-        if (step >= points.lastIndex) step = 0
-        while (playing && step < points.lastIndex) {
+    fun parse(value: String): Long? {
+        if (value.isBlank()) return null
+        val patterns = listOf(
+            "dd-MM-yyyy HH:mm", "dd/MM/yyyy HH:mm", "yyyy-MM-dd HH:mm",
+            "dd-MM-yyyy HH:mm:ss", "dd/MM/yyyy HH:mm:ss", "yyyy-MM-dd HH:mm:ss"
+        )
+        for (pattern in patterns) {
+            val parsed = runCatching {
+                SimpleDateFormat(pattern, Locale.US).apply { isLenient = false }.parse(value.trim())?.time
+            }.getOrNull()
+            if (parsed != null) return parsed
+        }
+        return null
+    }
+
+    val fromMillis = parse(fromText)
+    val toMillis = parse(toText)
+    val filterValid = (fromText.isBlank() || fromMillis != null) &&
+        (toText.isBlank() || toMillis != null) &&
+        (fromMillis == null || toMillis == null || fromMillis <= toMillis)
+
+    val filteredPoints = remember(points, fromText, toText) {
+        if (!filterValid) points else points.filter { point ->
+            val time = parse(point.at)
+            if (time == null) false
+            else (fromMillis == null || time >= fromMillis) && (toMillis == null || time <= toMillis)
+        }
+    }
+
+    var step by remember(filteredPoints) { mutableIntStateOf((filteredPoints.size - 1).coerceAtLeast(0)) }
+
+    LaunchedEffect(playing, filteredPoints) {
+        if (!playing || filteredPoints.isEmpty()) return@LaunchedEffect
+        if (step >= filteredPoints.lastIndex) step = 0
+        while (playing && step < filteredPoints.lastIndex) {
             delay(900)
             step++
         }
@@ -34,21 +68,71 @@ fun CdrMovementMap(points: List<GeoPoint>, modifier: Modifier = Modifier) {
     }
 
     Column(modifier.fillMaxWidth()) {
+        Card(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp)) {
+            Column(Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text("Movement period", style = MaterialTheme.typography.titleSmall)
+                OutlinedTextField(
+                    value = fromText,
+                    onValueChange = { playing = false; fromText = it },
+                    label = { Text("From: DD-MM-YYYY HH:MM") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                OutlinedTextField(
+                    value = toText,
+                    onValueChange = { playing = false; toText = it },
+                    label = { Text("To: DD-MM-YYYY HH:MM") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                if (!filterValid) {
+                    Text("Invalid date/time range.", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+                } else if (fromText.isNotBlank() || toText.isNotBlank()) {
+                    Text("${filteredPoints.size} of ${points.size} mapped records in selected period", style = MaterialTheme.typography.bodySmall)
+                    OutlinedButton(onClick = { playing = false; fromText = ""; toText = "" }, Modifier.fillMaxWidth()) {
+                        Text("Reset movement period")
+                    }
+                } else {
+                    Text("All ${points.size} mapped records", style = MaterialTheme.typography.bodySmall)
+                }
+            }
+        }
+
+        if (filterValid && filteredPoints.isEmpty()) {
+            Text(
+                "No mapped movement points are available in the selected period.",
+                style = MaterialTheme.typography.bodyMedium,
+                modifier = Modifier.padding(12.dp)
+            )
+            return@Column
+        }
+
+        val activePoints = if (filterValid) filteredPoints else points
+        val safeStep = step.coerceIn(0, (activePoints.size - 1).coerceAtLeast(0))
+
         Row(
             Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            Button(onClick = { if (step >= points.lastIndex) step = 0; playing = !playing }, Modifier.weight(1f)) {
-                Text(if (playing) "Pause" else "Play movement")
-            }
-            OutlinedButton(onClick = { playing = false; step = 0 }, Modifier.weight(1f)) { Text("First point") }
-            OutlinedButton(onClick = { playing = false; step = points.lastIndex }, Modifier.weight(1f)) { Text("All points") }
+            Button(
+                onClick = { if (safeStep >= activePoints.lastIndex) step = 0; playing = !playing },
+                enabled = filterValid && activePoints.isNotEmpty(),
+                modifier = Modifier.weight(1f)
+            ) { Text(if (playing) "Pause" else "Play movement") }
+            OutlinedButton(onClick = { playing = false; step = 0 }, enabled = activePoints.isNotEmpty(), modifier = Modifier.weight(1f)) { Text("First point") }
+            OutlinedButton(onClick = { playing = false; step = activePoints.lastIndex }, enabled = activePoints.isNotEmpty(), modifier = Modifier.weight(1f)) { Text("All points") }
         }
-        Text(
-            if (playing || step < points.lastIndex) "Playback: ${step + 1} / ${points.size} • ${points[step].at.ifBlank { "Time unavailable" }}" else "Showing all ${points.size} mapped records",
-            style = MaterialTheme.typography.bodySmall,
-            modifier = Modifier.padding(horizontal = 12.dp, vertical = 2.dp)
-        )
+
+        if (activePoints.isNotEmpty()) {
+            Text(
+                if (playing || safeStep < activePoints.lastIndex)
+                    "Playback: ${safeStep + 1} / ${activePoints.size} • ${activePoints[safeStep].at.ifBlank { "Time unavailable" }}"
+                else "Showing all ${activePoints.size} mapped records",
+                style = MaterialTheme.typography.bodySmall,
+                modifier = Modifier.padding(horizontal = 12.dp, vertical = 2.dp)
+            )
+        }
+
         AndroidView(
             modifier = Modifier.fillMaxWidth().height(360.dp),
             factory = { ctx ->
@@ -63,7 +147,8 @@ fun CdrMovementMap(points: List<GeoPoint>, modifier: Modifier = Modifier) {
             },
             update = { map ->
                 map.overlays.clear()
-                val visible = if (step >= points.lastIndex) points else points.take(step + 1)
+                if (activePoints.isEmpty()) return@AndroidView
+                val visible = if (safeStep >= activePoints.lastIndex) activePoints else activePoints.take(safeStep + 1)
                 val routePoints = visible.map { OsmGeoPoint(it.latitude, it.longitude) }
 
                 if (routePoints.size > 1) {
@@ -81,7 +166,7 @@ fun CdrMovementMap(points: List<GeoPoint>, modifier: Modifier = Modifier) {
                         snippet = point.at.ifBlank { "Time unavailable" }
                         subDescription = when {
                             index == 0 -> "First mapped record"
-                            index == visible.lastIndex && visible.size < points.size -> "Current playback point"
+                            index == visible.lastIndex && visible.size < activePoints.size -> "Current playback point"
                             index == visible.lastIndex -> "Last mapped record"
                             else -> "CDR mapped record"
                         }
@@ -89,7 +174,7 @@ fun CdrMovementMap(points: List<GeoPoint>, modifier: Modifier = Modifier) {
                 }
 
                 routePoints.lastOrNull()?.let { current ->
-                    if (visible.size < points.size) {
+                    if (visible.size < activePoints.size) {
                         map.controller.setZoom(maxOf(map.zoomLevelDouble, 15.0))
                         map.controller.animateTo(current)
                     } else if (routePoints.size == 1) {
