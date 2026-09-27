@@ -31,11 +31,17 @@ class CaseWorkspaceStore(private val context:Context){
  fun linkProfiles(w:CaseWorkspace):List<LinkProfile>{val all=w.datasets.flatMap{d->d.records.map{d.name to it}};val numbers=all.map{it.second.otherParty.ifBlank{it.second.number}}.filter{it.isNotBlank()}.distinct();return numbers.map{n->val hits=all.filter{(_,r)->r.otherParty==n||r.number==n};LinkProfile(n,hits.size,hits.map{it.first}.distinct(),hits.map{it.second.imei}.filter{it.isNotBlank()}.distinct(),hits.map{it.second.imsi}.filter{it.isNotBlank()}.distinct(),hits.map{it.second}.filter{it.cellId.isNotBlank()}.map{"${it.lac}/${it.cellId}"}.distinct())}.sortedByDescending{it.totalInteractions}}
  fun linkedRecords(w:CaseWorkspace,number:String):List<LinkedRecord>{if(number.isBlank())return emptyList();return w.datasets.flatMap{d->d.records.filter{r->r.otherParty==number||r.number==number}.map{LinkedRecord(d.name,it)}}.sortedBy{it.record.dateTime}}
  fun sharedTowers(w:CaseWorkspace,first:String,second:String):List<SharedTower>{fun events(number:String)=w.datasets.flatMap{d->d.records.filter{r->(r.otherParty==number||r.number==number)&&r.cellId.isNotBlank()}.map{r->("${r.lac}/${r.cellId}") to TowerEvent(d.name,r.dateTime,r.direction)}}.groupBy({it.first},{it.second});val a=events(first);val b=events(second);return a.keys.intersect(b.keys).map{tower->SharedTower(tower,a[tower]?.size?:0,b[tower]?.size?:0,a[tower].orEmpty().sortedBy{it.dateTime},b[tower].orEmpty().sortedBy{it.dateTime})}.sortedByDescending{it.firstCount+it.secondCount}}
-
  fun coLocationMatches(w:CaseWorkspace,first:String,second:String,windowMinutes:Int):List<CoLocationMatch>{
   val out=mutableListOf<CoLocationMatch>()
-  sharedTowers(w,first,second).forEach{shared->
-   shared.firstEvents.forEach{a->val at=parseTime(a.dateTime)?:return@forEach;shared.secondEvents.forEach{b->val bt=parseTime(b.dateTime)?:return@forEach;val diff=abs(at-bt)/60000L;if(diff<=windowMinutes)out.add(CoLocationMatch(shared.tower,a,b,diff))}}
+  for(shared in sharedTowers(w,first,second)){
+   for(a in shared.firstEvents){
+    val at=parseTime(a.dateTime)?:continue
+    for(b in shared.secondEvents){
+     val bt=parseTime(b.dateTime)?:continue
+     val diff=abs(at-bt)/60000L
+     if(diff<=windowMinutes)out.add(CoLocationMatch(shared.tower,a,b,diff))
+    }
+   }
   }
   return out.distinctBy{listOf(it.tower,it.firstEvent.datasetName,it.firstEvent.dateTime,it.secondEvent.datasetName,it.secondEvent.dateTime)}.sortedWith(compareBy<CoLocationMatch>{it.differenceMinutes}.thenBy{it.firstEvent.dateTime})
  }
