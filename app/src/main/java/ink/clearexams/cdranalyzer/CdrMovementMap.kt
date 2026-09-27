@@ -34,6 +34,18 @@ private fun movementHour(value:String):Int? {
 }
 private fun movementTimePeriod(hour:Int):String = when(hour){ in 6..11 -> "Morning"; in 12..16 -> "Afternoon"; in 17..21 -> "Evening"; else -> "Night" }
 private fun movementDayNight(hour:Int):String = if(hour in 6..17) "Day" else "Night"
+private fun movementWeekday(value:String):String? {
+    val epoch=run {
+        for(pattern in listOf("dd-MM-yyyy HH:mm","dd/MM/yyyy HH:mm","yyyy-MM-dd HH:mm","dd-MM-yyyy HH:mm:ss","dd/MM/yyyy HH:mm:ss","yyyy-MM-dd HH:mm:ss")){
+            val parsed=runCatching{SimpleDateFormat(pattern,Locale.US).apply{isLenient=false}.parse(value.trim())?.time}.getOrNull()
+            if(parsed!=null) return@run parsed
+        }
+        return@run null
+    } ?: return null
+    return when(Calendar.getInstance().apply{timeInMillis=epoch}.get(Calendar.DAY_OF_WEEK)){
+        Calendar.MONDAY->"Mon";Calendar.TUESDAY->"Tue";Calendar.WEDNESDAY->"Wed";Calendar.THURSDAY->"Thu";Calendar.FRIDAY->"Fri";Calendar.SATURDAY->"Sat";else->"Sun"
+    }
+}
 private fun movementTowerKey(point: GeoPoint): String = point.tower.ifBlank { "${"%.5f".format(Locale.US, point.latitude)}, ${"%.5f".format(Locale.US, point.longitude)}" }
 private data class MapFocus(val points: List<GeoPoint>, val label: String)
 private const val MOVEMENT_PREFS = "movement_review_settings"
@@ -70,6 +82,10 @@ fun CdrMovementMap(points: List<GeoPoint>, modifier: Modifier = Modifier) {
                 mapFocus=MapFocus(observations,"%02d:00–%02d:59".format(Locale.US,hour,hour))
             }
         }
+        WeekdayActivityCard(intel.weekdays){label->
+            val observations=active.filter{movementWeekday(it.at)==label}
+            if(observations.isNotEmpty()){playing=false;mapFocus=MapFocus(observations,label)}
+        }
         MovementThresholdSettings(thresholds=thresholds,onChange={updateThresholds(it)})
         MovementFlagFilters(rapidFlagCount,longGapFlagCount,returnFlagCount,showRapidFlags,showLongGapFlags,showReturnFlags,{showRapidFlags=it;showAnomalies=false;mapFocus=null},{showLongGapFlags=it;showAnomalies=false;mapFocus=null},{showReturnFlags=it;showAnomalies=false;mapFocus=null})
         Card(Modifier.fillMaxWidth().padding(horizontal=8.dp,vertical=4.dp)){Column(Modifier.padding(10.dp),verticalArrangement=Arrangement.spacedBy(6.dp)){Text("Movement Intelligence",style=MaterialTheme.typography.titleSmall);Text("${intel.visits.size} towers • ${intel.repeatedTowers} repeated • ${intel.transitions.size} transitions • ${visibleAnomalies.size} visible / ${intel.anomalies.size} total flags",style=MaterialTheme.typography.bodySmall);intel.visits.firstOrNull()?.let{top->Text("Most observed: ${top.tower} • ${top.records} record(s) • first ${top.firstSeen} • last ${top.lastSeen}",style=MaterialTheme.typography.bodySmall)};Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(6.dp)){OutlinedButton({showVisits=true},Modifier.weight(1f),enabled=intel.visits.isNotEmpty()){Text("Visits")};OutlinedButton({showTransitions=true},Modifier.weight(1f),enabled=intel.transitions.isNotEmpty()){Text("Transitions")};OutlinedButton({showAnomalies=true},Modifier.weight(1f),enabled=visibleAnomalies.isNotEmpty()){Text("Flags (${visibleAnomalies.size})")}};if(visibleAnomalies.isEmpty()&&intel.anomalies.isNotEmpty())Text("No review flag types are currently selected.",style=MaterialTheme.typography.bodySmall);Text("Flags identify patterns for review only. Tower observations do not establish the handset's exact position or continuous travel.",style=MaterialTheme.typography.labelSmall)}}
@@ -78,6 +94,31 @@ fun CdrMovementMap(points: List<GeoPoint>, modifier: Modifier = Modifier) {
         if(active.isNotEmpty())Text(if(mapFocus!=null)"Showing selected movement evidence on map" else if(playing||safe<active.lastIndex)"Playback: ${safe+1} / ${active.size} • ${active[safe].at.ifBlank{"Time unavailable"}}" else "Showing all ${active.size} mapped records",style=MaterialTheme.typography.bodySmall,modifier=Modifier.padding(horizontal=12.dp,vertical=2.dp))
         AndroidView(modifier=Modifier.fillMaxWidth().height(360.dp),factory={ctx->Configuration.getInstance().userAgentValue=ctx.packageName;Configuration.getInstance().load(ctx,ctx.getSharedPreferences("osmdroid",0));MapView(ctx).apply{setMultiTouchControls(true);minZoomLevel=3.0;maxZoomLevel=20.0;mapRef=this}},update={map->map.overlays.clear();if(active.isEmpty())return@AndroidView;val focus=mapFocus;val visible=if(focus!=null)focus.points else if(safe>=active.lastIndex)active else active.take(safe+1);val route=visible.map{OsmGeoPoint(it.latitude,it.longitude)};if(route.size>1)map.overlays.add(Polyline().apply{setPoints(route);outlinePaint.strokeWidth=if(focus!=null)11f else 7f});visible.forEachIndexed{i,p->map.overlays.add(Marker(map).apply{position=OsmGeoPoint(p.latitude,p.longitude);setAnchor(Marker.ANCHOR_CENTER,Marker.ANCHOR_BOTTOM);title=if(focus!=null)"Selected • ${p.tower.ifBlank{"Mapped CDR point"}}" else p.tower.ifBlank{"Mapped CDR point"};snippet=p.at.ifBlank{"Time unavailable"};subDescription=if(focus!=null)"Highlighted movement observation" else if(i==0)"First mapped record" else if(i==visible.lastIndex&&visible.size<active.size)"Current playback point" else if(i==visible.lastIndex)"Last mapped record" else "CDR mapped record"})};route.lastOrNull()?.let{c->if(focus!=null){if(route.size==1){map.controller.setZoom(17.0);map.controller.animateTo(c)}else{val n=route.maxOf{it.latitude};val s=route.minOf{it.latitude};val e=route.maxOf{it.longitude};val w=route.minOf{it.longitude};map.post{map.zoomToBoundingBox(BoundingBox(n,e,s,w),true,96)}}}else if(visible.size<active.size){map.controller.setZoom(maxOf(map.zoomLevelDouble,15.0));map.controller.animateTo(c)}else if(route.size==1){map.controller.setZoom(16.0);map.controller.setCenter(c)}else{val n=route.maxOf{it.latitude};val s=route.minOf{it.latitude};val e=route.maxOf{it.longitude};val w=route.minOf{it.longitude};map.post{map.zoomToBoundingBox(BoundingBox(n,e,s,w),true,72)}}};map.invalidate()})
     };DisposableEffect(Unit){onDispose{playing=false;mapRef?.onDetach()}}
+}
+
+@Composable private fun WeekdayActivityCard(days:List<MovementIntelligence.WeekdaySummary>,onDaySelected:(String)->Unit){
+    val peak=days.maxByOrNull{it.observations}
+    Card(Modifier.fillMaxWidth().padding(horizontal=8.dp,vertical=4.dp)){
+        Column(Modifier.padding(10.dp),verticalArrangement=Arrangement.spacedBy(6.dp)){
+            Text("Weekday Activity",style=MaterialTheme.typography.titleSmall)
+            peak?.takeIf{it.observations>0}?.let{p->
+                Text("Peak weekday: ${p.label} • ${p.observations} observation(s) • ${p.uniqueTowers} tower(s)",style=MaterialTheme.typography.bodySmall)
+                p.topTower?.let{Text("Most observed tower on ${p.label}: $it • ${p.topTowerRecords} record(s)",style=MaterialTheme.typography.bodySmall)}
+            }
+            LazyRow(horizontalArrangement=Arrangement.spacedBy(6.dp)){
+                items(days){d->
+                    Surface(modifier=Modifier.clickable(enabled=d.observations>0){onDaySelected(d.label)},tonalElevation=1.dp,shape=MaterialTheme.shapes.small){
+                        Column(Modifier.padding(horizontal=10.dp,vertical=7.dp)){
+                            Text(d.label,style=MaterialTheme.typography.labelMedium)
+                            Text(d.observations.toString(),style=MaterialTheme.typography.titleMedium)
+                            Text("obs",style=MaterialTheme.typography.labelSmall)
+                        }
+                    }
+                }
+            }
+            Text("Tap a weekday with observations to highlight matching mapped CDR records. Counts reflect only timestamped tower observations.",style=MaterialTheme.typography.labelSmall)
+        }
+    }
 }
 
 @Composable private fun MovementFlagFilters(rapidCount:Int,longGapCount:Int,returnCount:Int,rapidSelected:Boolean,longGapSelected:Boolean,returnSelected:Boolean,onRapid:(Boolean)->Unit,onLongGap:(Boolean)->Unit,onReturn:(Boolean)->Unit){
