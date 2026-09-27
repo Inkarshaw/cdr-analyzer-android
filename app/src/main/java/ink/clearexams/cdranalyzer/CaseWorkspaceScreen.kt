@@ -13,46 +13,191 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 
 @Composable
-fun CaseWorkspaceScreen(store:CaseWorkspaceStore,currentRows:List<CdrRecord>,currentFileName:String,onLoadDataset:(List<CdrRecord>,String)->Unit){
- val context=LocalContext.current;val identityStore=remember{NumberIdentityStore(context)}
- var cases by remember{mutableStateOf(store.list())};var selected by remember{mutableStateOf<CaseWorkspace?>(null)};var showNew by remember{mutableStateOf(false)};var showCommon by remember{mutableStateOf(false)};var showLinks by remember{mutableStateOf(false)};var showShared by remember{mutableStateOf(false)};var showTimeline by remember{mutableStateOf(false)};var showGraph by remember{mutableStateOf(false)};var showIdentities by remember{mutableStateOf(false)};var fromText by remember{mutableStateOf("")};var toText by remember{mutableStateOf("")};var reportStatus by remember{mutableStateOf("")};var backupStatus by remember{mutableStateOf("")}
- fun refresh(id:String?=selected?.id){cases=store.list();selected=id?.let(store::load)}
- val restoreLauncher=rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()){uri->if(uri!=null){runCatching{CaseBackupManager.restore(context,uri,store)}.onSuccess{restored->cases=store.list();selected=restored;fromText="";toText="";backupStatus="Restored ${restored.title}"}.onFailure{backupStatus="Restore failed: ${it.message?:"Invalid backup"}"}}}
- if(showNew)NewCaseDialog({showNew=false}){title,crime->selected=store.create(title,crime);refresh(selected?.id);showNew=false}
- selected?.let{w->
-  val timeFilter=CaseTimeFilter(fromText.trim(),toText.trim());val filterValid=CaseTimeFiltering.valid(timeFilter);val analysisWorkspace=if(filterValid)CaseTimeFiltering.apply(w,timeFilter) else w;val originalCount=CaseTimeFiltering.count(w);val filteredCount=CaseTimeFiltering.count(analysisWorkspace)
-  if(showIdentities)NumberIdentityDialog(w.id,w,identityStore){showIdentities=false}
-  if(showCommon)CommonContactsDialog(w.id,store.commonContacts(analysisWorkspace),identityStore){showCommon=false}
-  if(showLinks)LinkAnalysisDialog(store,analysisWorkspace,identityStore){showLinks=false}
-  if(showShared)SharedTowerDialog(store,analysisWorkspace){showShared=false}
-  if(showTimeline)InvestigationTimelineDialog(analysisWorkspace){showTimeline=false}
-  if(showGraph)RelationshipGraphDialog(analysisWorkspace){showGraph=false}
-  LazyColumn(Modifier.fillMaxSize(),contentPadding=PaddingValues(12.dp),verticalArrangement=Arrangement.spacedBy(8.dp)){
-   item{Text(w.title,style=MaterialTheme.typography.headlineSmall);if(w.crimeNumber.isNotBlank())Text("Crime No.: ${w.crimeNumber}");Text("${w.datasets.size} CDR dataset(s) • $originalCount records",style=MaterialTheme.typography.bodySmall)}
-   item{Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(8.dp)){OutlinedButton({selected=null},Modifier.weight(1f)){Text("All Cases")};Button(onClick={if(currentRows.isNotEmpty()){selected=store.addDataset(w,currentFileName,currentRows);refresh(selected?.id)}},enabled=currentRows.isNotEmpty(),modifier=Modifier.weight(1f)){Text("Add Current CDR")}}}
-   if(w.datasets.isNotEmpty())item{Button({showIdentities=true},Modifier.fillMaxWidth()){Text("Manage Number Identities / Roles")}}
-   if(w.datasets.isNotEmpty())item{Card(Modifier.fillMaxWidth()){Column(Modifier.padding(12.dp),verticalArrangement=Arrangement.spacedBy(6.dp)){Text("Analysis Date / Time Filter",style=MaterialTheme.typography.titleSmall);OutlinedTextField(fromText,{fromText=it},label={Text("From: DD-MM-YYYY HH:MM")},singleLine=true,modifier=Modifier.fillMaxWidth());OutlinedTextField(toText,{toText=it},label={Text("To: DD-MM-YYYY HH:MM")},singleLine=true,modifier=Modifier.fillMaxWidth());if(!filterValid)Text("Invalid date/time range. Analysis is using all records.",color=MaterialTheme.colorScheme.error,style=MaterialTheme.typography.bodySmall)else if(timeFilter.active)Text("Filter active: $filteredCount of $originalCount records",style=MaterialTheme.typography.bodySmall)else Text("No filter: all $originalCount records",style=MaterialTheme.typography.bodySmall);if(timeFilter.active)OutlinedButton({fromText="";toText=""},Modifier.fillMaxWidth()){Text("Clear Date / Time Filter")}}}}
-   if(w.datasets.isNotEmpty())item{Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(8.dp)){Button({showTimeline=true},Modifier.weight(1f),enabled=filterValid){Text("Timeline")};Button({showGraph=true},Modifier.weight(1f),enabled=filterValid){Text("Relationship Graph")}}}
-   if(w.datasets.size>=2){item{Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(8.dp)){Button({showCommon=true},Modifier.weight(1f),enabled=filterValid){Text("Common Contacts")};Button({showLinks=true},Modifier.weight(1f),enabled=filterValid){Text("Link Analysis")}}};item{Button({showShared=true},Modifier.fillMaxWidth(),enabled=filterValid){Text("Shared Towers / Co-location")}}}
-   if(w.datasets.isNotEmpty())item{Button(onClick={runCatching{val f=CaseReportExporter.export(context,w,timeFilter);reportStatus="Report created: ${f.name}";CaseReportExporter.share(context,f)}.onFailure{reportStatus="Report export failed: ${it.message?:"Unknown error"}"}},modifier=Modifier.fillMaxWidth(),enabled=filterValid){Text("Export / Share Investigation Report")};if(reportStatus.isNotBlank())Text(reportStatus,style=MaterialTheme.typography.bodySmall)}
-   item{Card(Modifier.fillMaxWidth()){Column(Modifier.padding(12.dp),verticalArrangement=Arrangement.spacedBy(6.dp)){Text("Case Backup",style=MaterialTheme.typography.titleSmall);Text("Backup includes case details, notes and all saved CDR records.",style=MaterialTheme.typography.bodySmall);Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(8.dp)){OutlinedButton(onClick={runCatching{val f=CaseBackupManager.export(context,w);backupStatus="Backup created: ${f.name}";CaseBackupManager.share(context,f)}.onFailure{backupStatus="Backup failed: ${it.message?:"Unknown error"}"}},modifier=Modifier.weight(1f)){Text("Backup Case")};Button(onClick={restoreLauncher.launch(arrayOf("application/json","application/octet-stream","*/*"))},modifier=Modifier.weight(1f)){Text("Restore Backup")}};if(backupStatus.isNotBlank())Text(backupStatus,style=MaterialTheme.typography.bodySmall)}}}
-   item{Text("Saved CDRs",style=MaterialTheme.typography.titleMedium)}
-   if(w.datasets.isEmpty())item{Text("No CDR saved in this case yet. Import a CDR, then tap Add Current CDR.")}else items(w.datasets){d->Card(Modifier.fillMaxWidth().clickable{onLoadDataset(d.records,d.name)}){Column(Modifier.padding(12.dp)){Text(d.name,style=MaterialTheme.typography.titleSmall);Text("${d.records.size} records",style=MaterialTheme.typography.bodySmall);Text("Tap to load for analysis",style=MaterialTheme.typography.labelSmall)}}}
-   item{Text("Case Notes",style=MaterialTheme.typography.titleMedium)}
-   item{var notes by remember(w.id,w.updatedAt){mutableStateOf(w.notes)};OutlinedTextField(notes,{notes=it},modifier=Modifier.fillMaxWidth().heightIn(min=120.dp),label={Text("Notes")});Button({selected=store.updateNotes(w,notes);refresh(selected?.id)},Modifier.padding(top=8.dp)){Text("Save Notes")}}
-  };return
- }
- Column(Modifier.fillMaxSize().padding(12.dp)){Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(8.dp)){Button({showNew=true},Modifier.weight(1f)){Text("New Case")};OutlinedButton({restoreLauncher.launch(arrayOf("application/json","application/octet-stream","*/*"))},Modifier.weight(1f)){Text("Restore Backup")}};if(backupStatus.isNotBlank())Text(backupStatus,style=MaterialTheme.typography.bodySmall,modifier=Modifier.padding(top=6.dp));Spacer(Modifier.height(8.dp));Text("Saved Cases",style=MaterialTheme.typography.titleMedium);if(cases.isEmpty())Text("No saved cases yet.",modifier=Modifier.padding(top=16.dp))else LazyColumn{items(cases){w->ListItem(headlineContent={Text(w.title)},supportingContent={Text(listOf(w.crimeNumber,"${w.datasets.size} CDR(s)").filter{it.isNotBlank()}.joinToString(" • "))},modifier=Modifier.clickable{selected=w});HorizontalDivider()}}}
+fun CaseWorkspaceScreen(
+    store: CaseWorkspaceStore,
+    currentRows: List<CdrRecord>,
+    currentFileName: String,
+    onLoadDataset: (List<CdrRecord>, String) -> Unit
+) {
+    val context = LocalContext.current
+    val identityStore = remember(context) { NumberIdentityStore(context) }
+    var cases by remember { mutableStateOf(store.list()) }
+    var selected by remember { mutableStateOf<CaseWorkspace?>(null) }
+    var showNew by remember { mutableStateOf(false) }
+    var showCommon by remember { mutableStateOf(false) }
+    var showLinks by remember { mutableStateOf(false) }
+    var showShared by remember { mutableStateOf(false) }
+    var showTimeline by remember { mutableStateOf(false) }
+    var showGraph by remember { mutableStateOf(false) }
+    var showIdentities by remember { mutableStateOf(false) }
+    var fromText by remember { mutableStateOf("") }
+    var toText by remember { mutableStateOf("") }
+    var reportStatus by remember { mutableStateOf("") }
+    var backupStatus by remember { mutableStateOf("") }
+
+    fun refresh(id: String? = selected?.id) {
+        cases = store.list()
+        selected = id?.let(store::load)
+    }
+
+    val restoreLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) {
+            runCatching { CaseBackupManager.restore(context, uri, store) }
+                .onSuccess { restored ->
+                    cases = store.list(); selected = restored; fromText = ""; toText = ""
+                    backupStatus = "Restored ${restored.title}"
+                }
+                .onFailure { backupStatus = "Restore failed: ${it.message ?: "Invalid backup"}" }
+        }
+    }
+
+    if (showNew) NewCaseDialog({ showNew = false }) { title, crime ->
+        selected = store.create(title, crime); refresh(selected?.id); showNew = false
+    }
+
+    selected?.let { workspace ->
+        val timeFilter = CaseTimeFilter(fromText.trim(), toText.trim())
+        val filterValid = CaseTimeFiltering.valid(timeFilter)
+        val analysisWorkspace = if (filterValid) CaseTimeFiltering.apply(workspace, timeFilter) else workspace
+        val originalCount = CaseTimeFiltering.count(workspace)
+        val filteredCount = CaseTimeFiltering.count(analysisWorkspace)
+
+        if (showIdentities) NumberIdentityDialog(workspace.id, workspace, identityStore) { showIdentities = false }
+        if (showCommon) CommonContactsDialog(workspace.id, store.commonContacts(analysisWorkspace), identityStore) { showCommon = false }
+        if (showLinks) LinkAnalysisDialog(store, analysisWorkspace, identityStore) { showLinks = false }
+        if (showShared) SharedTowerDialog(store, analysisWorkspace) { showShared = false }
+        if (showTimeline) InvestigationTimelineDialog(analysisWorkspace) { showTimeline = false }
+        if (showGraph) RelationshipGraphDialog(analysisWorkspace) { showGraph = false }
+
+        LazyColumn(
+            Modifier.fillMaxSize(),
+            contentPadding = PaddingValues(12.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            item {
+                Text(workspace.title, style = MaterialTheme.typography.headlineSmall)
+                if (workspace.crimeNumber.isNotBlank()) Text("Crime No.: ${workspace.crimeNumber}")
+                Text("${workspace.datasets.size} CDR dataset(s) • $originalCount records", style = MaterialTheme.typography.bodySmall)
+            }
+            item {
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedButton({ selected = null }, Modifier.weight(1f)) { Text("All Cases") }
+                    Button(
+                        onClick = {
+                            if (currentRows.isNotEmpty()) {
+                                selected = store.addDataset(workspace, currentFileName, currentRows)
+                                refresh(selected?.id)
+                            }
+                        },
+                        enabled = currentRows.isNotEmpty(),
+                        modifier = Modifier.weight(1f)
+                    ) { Text("Add Current CDR") }
+                }
+            }
+            if (workspace.datasets.isNotEmpty()) item {
+                Button({ showIdentities = true }, Modifier.fillMaxWidth()) { Text("Manage Number Identities / Roles") }
+            }
+            if (workspace.datasets.isNotEmpty()) item {
+                Card(Modifier.fillMaxWidth()) {
+                    Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Text("Analysis Date / Time Filter", style = MaterialTheme.typography.titleSmall)
+                        OutlinedTextField(fromText, { fromText = it }, label = { Text("From: DD-MM-YYYY HH:MM") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                        OutlinedTextField(toText, { toText = it }, label = { Text("To: DD-MM-YYYY HH:MM") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                        when {
+                            !filterValid -> Text("Invalid date/time range. Analysis is using all records.", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+                            timeFilter.active -> Text("Filter active: $filteredCount of $originalCount records", style = MaterialTheme.typography.bodySmall)
+                            else -> Text("No filter: all $originalCount records", style = MaterialTheme.typography.bodySmall)
+                        }
+                        if (timeFilter.active) OutlinedButton({ fromText = ""; toText = "" }, Modifier.fillMaxWidth()) { Text("Clear Date / Time Filter") }
+                    }
+                }
+            }
+            if (workspace.datasets.isNotEmpty()) item {
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Button({ showTimeline = true }, Modifier.weight(1f), enabled = filterValid) { Text("Timeline") }
+                    Button({ showGraph = true }, Modifier.weight(1f), enabled = filterValid) { Text("Relationship Graph") }
+                }
+            }
+            if (workspace.datasets.size >= 2) {
+                item {
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Button({ showCommon = true }, Modifier.weight(1f), enabled = filterValid) { Text("Common Contacts") }
+                        Button({ showLinks = true }, Modifier.weight(1f), enabled = filterValid) { Text("Link Analysis") }
+                    }
+                }
+                item { Button({ showShared = true }, Modifier.fillMaxWidth(), enabled = filterValid) { Text("Shared Towers / Co-location") } }
+            }
+            if (workspace.datasets.isNotEmpty()) item {
+                Button(
+                    onClick = {
+                        runCatching {
+                            val file = CaseReportExporter.export(context, workspace, timeFilter)
+                            reportStatus = "Report created: ${file.name}"
+                            CaseReportExporter.share(context, file)
+                        }.onFailure { reportStatus = "Report export failed: ${it.message ?: "Unknown error"}" }
+                    },
+                    modifier = Modifier.fillMaxWidth(), enabled = filterValid
+                ) { Text("Export / Share Investigation Report") }
+                if (reportStatus.isNotBlank()) Text(reportStatus, style = MaterialTheme.typography.bodySmall)
+            }
+            item {
+                Card(Modifier.fillMaxWidth()) {
+                    Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Text("Case Backup", style = MaterialTheme.typography.titleSmall)
+                        Text("Backup includes case details, notes and all saved CDR records.", style = MaterialTheme.typography.bodySmall)
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            OutlinedButton(onClick = {
+                                runCatching {
+                                    val file = CaseBackupManager.export(context, workspace)
+                                    backupStatus = "Backup created: ${file.name}"
+                                    CaseBackupManager.share(context, file)
+                                }.onFailure { backupStatus = "Backup failed: ${it.message ?: "Unknown error"}" }
+                            }, modifier = Modifier.weight(1f)) { Text("Backup Case") }
+                            Button(onClick = { restoreLauncher.launch(arrayOf("application/json", "application/octet-stream", "*/*")) }, modifier = Modifier.weight(1f)) { Text("Restore Backup") }
+                        }
+                        if (backupStatus.isNotBlank()) Text(backupStatus, style = MaterialTheme.typography.bodySmall)
+                    }
+                }
+            }
+            item { Text("Saved CDRs", style = MaterialTheme.typography.titleMedium) }
+            if (workspace.datasets.isEmpty()) item { Text("No CDR saved in this case yet. Import a CDR, then tap Add Current CDR.") }
+            else items(workspace.datasets) { dataset ->
+                Card(Modifier.fillMaxWidth().clickable { onLoadDataset(dataset.records, dataset.name) }) {
+                    Column(Modifier.padding(12.dp)) {
+                        Text(dataset.name, style = MaterialTheme.typography.titleSmall)
+                        Text("${dataset.records.size} records", style = MaterialTheme.typography.bodySmall)
+                        Text("Tap to load for analysis", style = MaterialTheme.typography.labelSmall)
+                    }
+                }
+            }
+            item { Text("Case Notes", style = MaterialTheme.typography.titleMedium) }
+            item {
+                var notes by remember(workspace.id, workspace.updatedAt) { mutableStateOf(workspace.notes) }
+                OutlinedTextField(notes, { notes = it }, modifier = Modifier.fillMaxWidth().heightIn(min = 120.dp), label = { Text("Notes") })
+                Button({ selected = store.updateNotes(workspace, notes); refresh(selected?.id) }, Modifier.padding(top = 8.dp)) { Text("Save Notes") }
+            }
+        }
+        return
+    }
+
+    Column(Modifier.fillMaxSize().padding(12.dp)) {
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Button({ showNew = true }, Modifier.weight(1f)) { Text("New Case") }
+            OutlinedButton({ restoreLauncher.launch(arrayOf("application/json", "application/octet-stream", "*/*")) }, Modifier.weight(1f)) { Text("Restore Backup") }
+        }
+        if (backupStatus.isNotBlank()) Text(backupStatus, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(top = 6.dp))
+        Spacer(Modifier.height(8.dp))
+        Text("Saved Cases", style = MaterialTheme.typography.titleMedium)
+        if (cases.isEmpty()) Text("No saved cases yet.", modifier = Modifier.padding(top = 16.dp))
+        else LazyColumn {
+            items(cases) { workspace ->
+                ListItem(
+                    headlineContent = { Text(workspace.title) },
+                    supportingContent = { Text(listOf(workspace.crimeNumber, "${workspace.datasets.size} CDR(s)").filter { it.isNotBlank() }.joinToString(" • ")) },
+                    modifier = Modifier.clickable { selected = workspace }
+                )
+                HorizontalDivider()
+            }
+        }
+    }
 }
-
-@Composable private fun NewCaseDialog(onDismiss:()->Unit,onCreate:(String,String)->Unit){var title by remember{mutableStateOf("")};var crime by remember{mutableStateOf("")};AlertDialog(onDismissRequest=onDismiss,title={Text("New Case")},text={Column(verticalArrangement=Arrangement.spacedBy(8.dp)){OutlinedTextField(title,{title=it},label={Text("Case name")},singleLine=true);OutlinedTextField(crime,{crime=it},label={Text("Crime No. (optional)")},singleLine=true)}},confirmButton={Button({onCreate(title,crime)},enabled=title.isNotBlank()){Text("Create")}},dismissButton={TextButton(onDismiss){Text("Cancel")}})}
-
-@Composable private fun CommonContactsDialog(caseId:String,contacts:List<CommonContact>,identities:NumberIdentityStore,onDismiss:()->Unit){fun label(n:String)=identities.find(caseId,n)?.displayLabel?:n;AlertDialog(onDismissRequest=onDismiss,title={Text("Common Contacts")},text={if(contacts.isEmpty())Text("No number appears in two or more saved CDRs for the selected period.")else LazyColumn(Modifier.heightIn(max=480.dp)){items(contacts.take(200)){c->ListItem(headlineContent={Text(label(c.number))},supportingContent={Text("${c.datasetCount} CDRs • ${c.totalInteractions} interactions\n${c.datasetNames.joinToString()}")});HorizontalDivider()}}},confirmButton={TextButton(onDismiss){Text("Close")}})}
-
-@Composable private fun LinkAnalysisDialog(store:CaseWorkspaceStore,workspace:CaseWorkspace,identities:NumberIdentityStore,onDismiss:()->Unit){fun label(n:String)=identities.find(workspace.id,n)?.displayLabel?:n;val profiles=remember(workspace){store.linkProfiles(workspace)};var query by remember{mutableStateOf("")};var chosen by remember{mutableStateOf<LinkProfile?>(null)};var showRecords by remember{mutableStateOf(false)};val filtered=profiles.filter{p->query.isBlank()||label(p.number).contains(query,true)||p.number.contains(query,true)||p.imeis.any{it.contains(query,true)}||p.imsis.any{it.contains(query,true)}||p.towers.any{it.contains(query,true)}};if(showRecords&&chosen!=null)LinkedRecordsDialog(workspace.id,chosen!!.number,store.linkedRecords(workspace,chosen!!.number),identities){showRecords=false};AlertDialog(onDismissRequest=onDismiss,title={Text("Cross-CDR Link Analysis")},text={Column{OutlinedTextField(query,{query=it},label={Text("Search name / role / number / IMEI / IMSI / tower")},singleLine=true,modifier=Modifier.fillMaxWidth());Spacer(Modifier.height(8.dp));chosen?.let{p->Card(Modifier.fillMaxWidth()){Column(Modifier.padding(12.dp)){Text(label(p.number),style=MaterialTheme.typography.titleMedium);Text("${p.totalInteractions} interactions • ${p.datasetNames.size} CDR(s)");if(p.datasetNames.isNotEmpty())Text("CDRs: ${p.datasetNames.joinToString()}");if(p.imeis.isNotEmpty())Text("IMEI: ${p.imeis.joinToString()}");if(p.imsis.isNotEmpty())Text("IMSI: ${p.imsis.joinToString()}");if(p.towers.isNotEmpty())Text("Towers: ${p.towers.joinToString()}");Button({showRecords=true},Modifier.fillMaxWidth().padding(top=8.dp)){Text("View ${p.totalInteractions} Matching Records")}}};Spacer(Modifier.height(8.dp))};LazyColumn(Modifier.heightIn(max=380.dp)){items(filtered.take(300)){p->ListItem(headlineContent={Text(label(p.number))},supportingContent={Text("${p.totalInteractions} interactions • ${p.datasetNames.size} CDR(s) • ${p.towers.size} tower(s)")},modifier=Modifier.clickable{chosen=p});HorizontalDivider()}}}},confirmButton={TextButton(onDismiss){Text("Close")}})}
-
-@Composable private fun LinkedRecordsDialog(caseId:String,number:String,records:List<LinkedRecord>,identities:NumberIdentityStore,onDismiss:()->Unit){fun label(n:String)=identities.find(caseId,n)?.displayLabel?:n;AlertDialog(onDismissRequest=onDismiss,title={Text("Records: ${label(number)}")},text={if(records.isEmpty())Text("No matching records.")else LazyColumn(Modifier.heightIn(max=520.dp)){items(records.take(1000)){item->val r=item.record;val tower=if(r.cellId.isNotBlank())listOf(r.lac,r.cellId).filter{it.isNotBlank()}.joinToString("/") else "";val party=r.otherParty.ifBlank{r.number};val detail=listOf(item.datasetName,r.dateTime,r.direction,r.duration.takeIf{it.isNotBlank()}?.let{"${it}s"}.orEmpty(),r.imei.takeIf{it.isNotBlank()}?.let{"IMEI $it"}.orEmpty(),r.imsi.takeIf{it.isNotBlank()}?.let{"IMSI $it"}.orEmpty(),tower.takeIf{it.isNotBlank()}?.let{"Tower $it"}.orEmpty()).filter{it.isNotBlank()}.joinToString(" • ");ListItem(headlineContent={Text(label(party))},supportingContent={Text(detail)});HorizontalDivider()}}},confirmButton={TextButton(onDismiss){Text("Back")}})}
-
-@Composable private fun SharedTowerDialog(store:CaseWorkspaceStore,workspace:CaseWorkspace,onDismiss:()->Unit){var first by remember{mutableStateOf("")};var second by remember{mutableStateOf("")};var window by remember{mutableIntStateOf(15)};var results by remember{mutableStateOf<List<SharedTower>>(emptyList())};var timed by remember{mutableStateOf<List<CoLocationMatch>>(emptyList())};var searched by remember{mutableStateOf(false)};var selected by remember{mutableStateOf<SharedTower?>(null)};selected?.let{tower->SharedTowerEventsDialog(first,second,tower){selected=null}};AlertDialog(onDismissRequest=onDismiss,title={Text("Shared Towers / Co-location")},text={Column{OutlinedTextField(first,{first=it},label={Text("Number A")},singleLine=true,modifier=Modifier.fillMaxWidth());OutlinedTextField(second,{second=it},label={Text("Number B")},singleLine=true,modifier=Modifier.fillMaxWidth().padding(top=6.dp));Text("Time window",style=MaterialTheme.typography.labelMedium,modifier=Modifier.padding(top=8.dp));Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(4.dp)){listOf(5,15,30,60).forEach{m->FilterChip(selected=window==m,onClick={window=m},label={Text("±$m min")})}};Button(onClick={results=store.sharedTowers(workspace,first.trim(),second.trim());timed=store.coLocationMatches(workspace,first.trim(),second.trim(),window);searched=true},enabled=first.isNotBlank()&&second.isNotBlank()&&first.trim()!=second.trim(),modifier=Modifier.fillMaxWidth().padding(top=8.dp)){Text("Compare")};Spacer(Modifier.height(8.dp));if(searched){Text("Time-matched events: ${timed.size}",style=MaterialTheme.typography.titleSmall);Text("Same tower within ±$window minutes. This is an investigative lead, not proof of exact physical proximity.",style=MaterialTheme.typography.bodySmall);if(timed.isEmpty())Text("No time-window matches found.",modifier=Modifier.padding(vertical=6.dp))else LazyColumn(Modifier.heightIn(max=220.dp)){items(timed.take(200)){m->ListItem(headlineContent={Text("Tower ${m.tower} • ${m.differenceMinutes} min apart")},supportingContent={Text("A: ${m.firstEvent.dateTime} • ${m.firstEvent.datasetName}\nB: ${m.secondEvent.dateTime} • ${m.secondEvent.datasetName}")});HorizontalDivider()}};HorizontalDivider();Text("All shared towers: ${results.size}",style=MaterialTheme.typography.titleSmall,modifier=Modifier.padding(top=6.dp));if(results.isEmpty())Text("No shared LAC/Cell tower found.")else LazyColumn(Modifier.heightIn(max=180.dp)){items(results){t->ListItem(headlineContent={Text("Tower ${t.tower}")},supportingContent={Text("$first: ${t.firstCount} event(s) • $second: ${t.secondCount} event(s)")},modifier=Modifier.clickable{selected=t});HorizontalDivider()}}}}}},confirmButton={TextButton(onDismiss){Text("Close")}})}
-
-@Composable private fun SharedTowerEventsDialog(first:String,second:String,tower:SharedTower,onDismiss:()->Unit){AlertDialog(onDismissRequest=onDismiss,title={Text("Tower ${tower.tower}")},text={LazyColumn(Modifier.heightIn(max=520.dp)){item{Text(first,style=MaterialTheme.typography.titleSmall)};items(tower.firstEvents){e->ListItem(headlineContent={Text(e.dateTime.ifBlank{"Time unavailable"})},supportingContent={Text("${e.datasetName} • ${e.direction}")})};item{HorizontalDivider();Text(second,style=MaterialTheme.typography.titleSmall,modifier=Modifier.padding(top=8.dp))};items(tower.secondEvents){e->ListItem(headlineContent={Text(e.dateTime.ifBlank{"Time unavailable"})},supportingContent={Text("${e.datasetName} • ${e.direction}")})}}},confirmButton={TextButton(onDismiss){Text("Back")}})}
