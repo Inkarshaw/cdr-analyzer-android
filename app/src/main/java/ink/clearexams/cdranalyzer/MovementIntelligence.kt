@@ -13,6 +13,7 @@ object MovementIntelligence {
     data class MovementAnomaly(val type: AnomalyType, val title: String, val detail: String, val at: String, val towers: List<String>)
     data class TimePeriodSummary(val label: String, val observations: Int, val topTower: String?, val topTowerRecords: Int)
     data class DayNightSummary(val label: String, val observations: Int, val uniqueTowers: Int, val topTower: String?, val topTowerRecords: Int)
+    data class HourlySummary(val hour: Int, val observations: Int, val uniqueTowers: Int, val topTower: String?, val topTowerRecords: Int)
     data class Metrics(
         val mappedObservations: Int,
         val uniqueTowers: Int,
@@ -22,7 +23,7 @@ object MovementIntelligence {
         val mostObservedTower: String?,
         val mostObservedTowerRecords: Int
     )
-    data class Summary(val visits: List<TowerVisit>, val transitions: List<Transition>, val repeatedTowers: Int, val anomalies: List<MovementAnomaly> = emptyList(), val metrics: Metrics = Metrics(0,0,0,0.0,0,null,0), val timePeriods: List<TimePeriodSummary> = emptyList(), val dayNight: List<DayNightSummary> = emptyList())
+    data class Summary(val visits: List<TowerVisit>, val transitions: List<Transition>, val repeatedTowers: Int, val anomalies: List<MovementAnomaly> = emptyList(), val metrics: Metrics = Metrics(0,0,0,0.0,0,null,0), val timePeriods: List<TimePeriodSummary> = emptyList(), val dayNight: List<DayNightSummary> = emptyList(), val hourly: List<HourlySummary> = emptyList())
 
     fun build(points: List<GeoPoint>, thresholds: Thresholds = Thresholds()): Summary {
         val rapidDistance = thresholds.rapidDistanceKm.coerceAtLeast(0.1); val rapidWindow = thresholds.rapidWindowMinutes.coerceAtLeast(1); val longGap = thresholds.longGapMinutes.coerceAtLeast(1); val returnWindow = thresholds.returnWindowMinutes.coerceAtLeast(1)
@@ -37,9 +38,11 @@ object MovementIntelligence {
         val top=visits.firstOrNull();val metrics=Metrics(timed.size,visits.size,transitions.size,approximatePathKm,longestGapMinutes,top?.tower,top?.records?:0)
         val periodOrder=listOf("Morning","Afternoon","Evening","Night");val grouped=timed.groupBy{timePeriod(it.second)};val timePeriods=periodOrder.map{label->val rows=grouped[label].orEmpty();val towerTop=rows.groupingBy{it.third}.eachCount().maxByOrNull{it.value};TimePeriodSummary(label,rows.size,towerTop?.key,towerTop?.value?:0)}
         val dayNightGroups=timed.groupBy{dayNightPeriod(it.second)};val dayNight=listOf("Day","Night").map{label->val rows=dayNightGroups[label].orEmpty();val towerTop=rows.groupingBy{it.third}.eachCount().maxByOrNull{it.value};DayNightSummary(label,rows.size,rows.map{it.third}.distinct().size,towerTop?.key,towerTop?.value?:0)}
-        return Summary(visits,transitions,visits.count{it.records>1},anomalies.distinctBy{"${it.type}|${it.at}|${it.towers.joinToString()}"},metrics,timePeriods,dayNight)
+        val hourlyGroups=timed.groupBy{hourOfDay(it.second)};val hourly=(0..23).map{hour->val rows=hourlyGroups[hour].orEmpty();val towerTop=rows.groupingBy{it.third}.eachCount().maxByOrNull{it.value};HourlySummary(hour,rows.size,rows.map{it.third}.distinct().size,towerTop?.key,towerTop?.value?:0)}
+        return Summary(visits,transitions,visits.count{it.records>1},anomalies.distinctBy{"${it.type}|${it.at}|${it.towers.joinToString()}"},metrics,timePeriods,dayNight,hourly)
     }
 
+    private fun hourOfDay(epochMillis:Long):Int = Calendar.getInstance().apply{timeInMillis=epochMillis}.get(Calendar.HOUR_OF_DAY)
     private fun dayNightPeriod(epochMillis:Long):String { val hour=Calendar.getInstance().apply{timeInMillis=epochMillis}.get(Calendar.HOUR_OF_DAY); return if(hour in 6..17) "Day" else "Night" }
     private fun timePeriod(epochMillis:Long):String { val hour=Calendar.getInstance().apply{timeInMillis=epochMillis}.get(Calendar.HOUR_OF_DAY); return when(hour){ in 6..11 -> "Morning"; in 12..16 -> "Afternoon"; in 17..21 -> "Evening"; else -> "Night" } }
     private fun haversineKm(lat1:Double,lon1:Double,lat2:Double,lon2:Double):Double{val r=6371.0088;val dLat=Math.toRadians(lat2-lat1);val dLon=Math.toRadians(lon2-lon1);val a=sin(dLat/2).pow(2)+cos(Math.toRadians(lat1))*cos(Math.toRadians(lat2))*sin(dLon/2).pow(2);return 2*r*asin(sqrt(a.coerceIn(0.0,1.0)))}
