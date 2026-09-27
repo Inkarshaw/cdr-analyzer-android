@@ -32,6 +32,8 @@ private fun movementHour(value:String):Int? {
     } ?: return null
     return Calendar.getInstance().apply{timeInMillis=epoch}.get(Calendar.HOUR_OF_DAY)
 }
+private fun movementTimePeriod(hour:Int):String = when(hour){ in 6..11 -> "Morning"; in 12..16 -> "Afternoon"; in 17..21 -> "Evening"; else -> "Night" }
+private fun movementDayNight(hour:Int):String = if(hour in 6..17) "Day" else "Night"
 private fun movementTowerKey(point: GeoPoint): String = point.tower.ifBlank { "${"%.5f".format(Locale.US, point.latitude)}, ${"%.5f".format(Locale.US, point.longitude)}" }
 private data class MapFocus(val points: List<GeoPoint>, val label: String)
 private const val MOVEMENT_PREFS = "movement_review_settings"
@@ -53,8 +55,14 @@ fun CdrMovementMap(points: List<GeoPoint>, modifier: Modifier = Modifier) {
         Card(Modifier.fillMaxWidth().padding(horizontal=8.dp,vertical=4.dp)){Column(Modifier.padding(10.dp),verticalArrangement=Arrangement.spacedBy(6.dp)){Text("Movement period",style=MaterialTheme.typography.titleSmall);OutlinedTextField(fromText,{playing=false;mapFocus=null;fromText=it},label={Text("From: DD-MM-YYYY HH:MM")},singleLine=true,modifier=Modifier.fillMaxWidth());OutlinedTextField(toText,{playing=false;mapFocus=null;toText=it},label={Text("To: DD-MM-YYYY HH:MM")},singleLine=true,modifier=Modifier.fillMaxWidth());if(!valid)Text("Invalid date/time range.",color=MaterialTheme.colorScheme.error,style=MaterialTheme.typography.bodySmall)else if(fromText.isNotBlank()||toText.isNotBlank()){Text("${filtered.size} of ${points.size} mapped records in selected period",style=MaterialTheme.typography.bodySmall);OutlinedButton({playing=false;mapFocus=null;fromText="";toText=""},Modifier.fillMaxWidth()){Text("Reset movement period")}}else Text("All ${points.size} mapped records",style=MaterialTheme.typography.bodySmall)}}
         if(valid&&filtered.isEmpty()){Text("No mapped movement points are available in the selected period.",modifier=Modifier.padding(12.dp));return@Column}
         MovementSummaryCard(intel.metrics)
-        TimeOfDayMovementCard(intel.timePeriods)
-        DayNightMovementCard(intel.dayNight)
+        TimeOfDayMovementCard(intel.timePeriods){label->
+            val observations=active.filter{movementHour(it.at)?.let{h->movementTimePeriod(h)==label}==true}
+            if(observations.isNotEmpty()){playing=false;mapFocus=MapFocus(observations,label)}
+        }
+        DayNightMovementCard(intel.dayNight){label->
+            val observations=active.filter{movementHour(it.at)?.let{h->movementDayNight(h)==label}==true}
+            if(observations.isNotEmpty()){playing=false;mapFocus=MapFocus(observations,label)}
+        }
         HourlyActivityCard(intel.hourly){hour->
             val observations=active.filter{movementHour(it.at)==hour}
             if(observations.isNotEmpty()){
@@ -111,12 +119,12 @@ fun CdrMovementMap(points: List<GeoPoint>, modifier: Modifier = Modifier) {
     }
 }
 
-@Composable private fun DayNightMovementCard(periods:List<MovementIntelligence.DayNightSummary>){
+@Composable private fun DayNightMovementCard(periods:List<MovementIntelligence.DayNightSummary>,onPeriodSelected:(String)->Unit){
     Card(Modifier.fillMaxWidth().padding(horizontal=8.dp,vertical=4.dp)){
         Column(Modifier.padding(10.dp),verticalArrangement=Arrangement.spacedBy(6.dp)){
             Text("Day / Night Summary",style=MaterialTheme.typography.titleSmall)
             periods.forEach{p->
-                Surface(Modifier.fillMaxWidth(),tonalElevation=1.dp,shape=MaterialTheme.shapes.small){
+                Surface(Modifier.fillMaxWidth().clickable(enabled=p.observations>0){onPeriodSelected(p.label)},tonalElevation=1.dp,shape=MaterialTheme.shapes.small){
                     Column(Modifier.padding(8.dp),verticalArrangement=Arrangement.spacedBy(2.dp)){
                         Text("${p.label} • ${p.observations} observation(s)",style=MaterialTheme.typography.bodyMedium)
                         Text("${p.uniqueTowers} unique tower(s)",style=MaterialTheme.typography.bodySmall)
@@ -124,12 +132,12 @@ fun CdrMovementMap(points: List<GeoPoint>, modifier: Modifier = Modifier) {
                     }
                 }
             }
-            Text("Day is 06:00–17:59 and Night is 18:00–05:59. This summary uses timestamped mapped tower observations only and does not establish exact handset location.",style=MaterialTheme.typography.labelSmall)
+            Text("Tap Day or Night to highlight matching mapped CDR records. Day is 06:00–17:59 and Night is 18:00–05:59; this does not establish exact handset location.",style=MaterialTheme.typography.labelSmall)
         }
     }
 }
 
-@Composable private fun TimeOfDayMovementCard(periods:List<MovementIntelligence.TimePeriodSummary>){Card(Modifier.fillMaxWidth().padding(horizontal=8.dp,vertical=4.dp)){Column(Modifier.padding(10.dp),verticalArrangement=Arrangement.spacedBy(6.dp)){Text("Time-of-day observations",style=MaterialTheme.typography.titleSmall);periods.forEach{p->Surface(Modifier.fillMaxWidth(),tonalElevation=1.dp,shape=MaterialTheme.shapes.small){Column(Modifier.padding(8.dp)){Text("${p.label} • ${p.observations} observation(s)",style=MaterialTheme.typography.bodyMedium);Text(p.topTower?.let{"Most observed tower: $it • ${p.topTowerRecords} record(s)"}?:"No mapped observations",style=MaterialTheme.typography.bodySmall)}}};Text("Periods summarize timestamps of mapped tower observations only; they do not establish the handset's exact location during those periods.",style=MaterialTheme.typography.labelSmall)}}}
+@Composable private fun TimeOfDayMovementCard(periods:List<MovementIntelligence.TimePeriodSummary>,onPeriodSelected:(String)->Unit){Card(Modifier.fillMaxWidth().padding(horizontal=8.dp,vertical=4.dp)){Column(Modifier.padding(10.dp),verticalArrangement=Arrangement.spacedBy(6.dp)){Text("Time-of-day observations",style=MaterialTheme.typography.titleSmall);periods.forEach{p->Surface(Modifier.fillMaxWidth().clickable(enabled=p.observations>0){onPeriodSelected(p.label)},tonalElevation=1.dp,shape=MaterialTheme.shapes.small){Column(Modifier.padding(8.dp)){Text("${p.label} • ${p.observations} observation(s)",style=MaterialTheme.typography.bodyMedium);Text(p.topTower?.let{"Most observed tower: $it • ${p.topTowerRecords} record(s)"}?:"No mapped observations",style=MaterialTheme.typography.bodySmall)}}};Text("Tap a period with observations to highlight those mapped CDR records. Periods summarize tower observations only and do not establish exact handset location.",style=MaterialTheme.typography.labelSmall)}}}
 
 @Composable private fun MovementSummaryCard(m:MovementIntelligence.Metrics){Card(Modifier.fillMaxWidth().padding(horizontal=8.dp,vertical=4.dp)){Column(Modifier.padding(10.dp),verticalArrangement=Arrangement.spacedBy(5.dp)){Text("Movement Summary",style=MaterialTheme.typography.titleSmall);Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(8.dp)){SummaryMetric("Observations",m.mappedObservations.toString(),Modifier.weight(1f));SummaryMetric("Towers",m.uniqueTowers.toString(),Modifier.weight(1f));SummaryMetric("Changes",m.towerChanges.toString(),Modifier.weight(1f))};Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(8.dp)){SummaryMetric("Approx. path","${"%.1f".format(Locale.US,m.approximatePathKm)} km",Modifier.weight(1f));SummaryMetric("Longest gap",formatMinutes(m.longestGapMinutes),Modifier.weight(1f))};m.mostObservedTower?.let{Text("Most observed tower: $it • ${m.mostObservedTowerRecords} record(s)",style=MaterialTheme.typography.bodySmall)};Text("Approx. path is the sum of straight-line distances between consecutive mapped CDR observations; it is not actual handset travel distance.",style=MaterialTheme.typography.labelSmall)}}}
 @Composable private fun SummaryMetric(label:String,value:String,modifier:Modifier=Modifier){Surface(modifier=modifier,tonalElevation=1.dp,shape=MaterialTheme.shapes.small){Column(Modifier.padding(8.dp)){Text(value,style=MaterialTheme.typography.titleMedium);Text(label,style=MaterialTheme.typography.labelSmall)}}}
