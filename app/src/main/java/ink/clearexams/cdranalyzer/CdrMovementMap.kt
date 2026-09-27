@@ -7,6 +7,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import kotlinx.coroutines.delay
@@ -21,13 +22,30 @@ import java.util.Locale
 
 private fun movementTowerKey(point: GeoPoint): String = point.tower.ifBlank { "${"%.5f".format(Locale.US, point.latitude)}, ${"%.5f".format(Locale.US, point.longitude)}" }
 private data class MapFocus(val points: List<GeoPoint>, val label: String)
+private const val MOVEMENT_PREFS = "movement_review_settings"
 
 @Composable
 fun CdrMovementMap(points: List<GeoPoint>, modifier: Modifier = Modifier) {
     if (points.isEmpty()) return
+    val context = LocalContext.current
+    val prefs = remember(context) { context.getSharedPreferences(MOVEMENT_PREFS, 0) }
+    val defaultThresholds = remember { MovementIntelligence.Thresholds() }
     var fromText by remember(points) { mutableStateOf("") }; var toText by remember(points) { mutableStateOf("") }
     var playing by remember(points) { mutableStateOf(false) }; var showVisits by remember { mutableStateOf(false) }; var showTransitions by remember { mutableStateOf(false) }; var showAnomalies by remember { mutableStateOf(false) }
-    var thresholds by remember { mutableStateOf(MovementIntelligence.Thresholds()) }
+    var thresholds by remember {
+        mutableStateOf(
+            MovementIntelligence.Thresholds(
+                rapidDistanceKm = prefs.getFloat("rapidDistanceKm", defaultThresholds.rapidDistanceKm.toFloat()).toDouble(),
+                rapidWindowMinutes = prefs.getLong("rapidWindowMinutes", defaultThresholds.rapidWindowMinutes),
+                longGapMinutes = prefs.getLong("longGapMinutes", defaultThresholds.longGapMinutes),
+                returnWindowMinutes = prefs.getLong("returnWindowMinutes", defaultThresholds.returnWindowMinutes)
+            )
+        )
+    }
+    fun updateThresholds(value: MovementIntelligence.Thresholds) {
+        thresholds = value; playing = false; mapFocus = null
+        prefs.edit().putFloat("rapidDistanceKm", value.rapidDistanceKm.toFloat()).putLong("rapidWindowMinutes", value.rapidWindowMinutes).putLong("longGapMinutes", value.longGapMinutes).putLong("returnWindowMinutes", value.returnWindowMinutes).apply()
+    }
     var mapFocus by remember { mutableStateOf<MapFocus?>(null) }; var mapRef by remember { mutableStateOf<MapView?>(null) }
     fun parse(value: String): Long? { if (value.isBlank()) return null; for (pattern in listOf("dd-MM-yyyy HH:mm","dd/MM/yyyy HH:mm","yyyy-MM-dd HH:mm","dd-MM-yyyy HH:mm:ss","dd/MM/yyyy HH:mm:ss","yyyy-MM-dd HH:mm:ss")) { val p=runCatching{SimpleDateFormat(pattern,Locale.US).apply{isLenient=false}.parse(value.trim())?.time}.getOrNull(); if(p!=null)return p }; return null }
     val fromMillis=parse(fromText); val toMillis=parse(toText); val filterValid=(fromText.isBlank()||fromMillis!=null)&&(toText.isBlank()||toMillis!=null)&&(fromMillis==null||toMillis==null||fromMillis<=toMillis)
@@ -47,9 +65,7 @@ fun CdrMovementMap(points: List<GeoPoint>, modifier: Modifier = Modifier) {
             if(!filterValid)Text("Invalid date/time range.",color=MaterialTheme.colorScheme.error,style=MaterialTheme.typography.bodySmall) else if(fromText.isNotBlank()||toText.isNotBlank()){Text("${filteredPoints.size} of ${points.size} mapped records in selected period",style=MaterialTheme.typography.bodySmall);OutlinedButton({playing=false;mapFocus=null;fromText="";toText=""},Modifier.fillMaxWidth()){Text("Reset movement period")}} else Text("All ${points.size} mapped records",style=MaterialTheme.typography.bodySmall)
         }}
         if(filterValid&&filteredPoints.isEmpty()){Text("No mapped movement points are available in the selected period.",modifier=Modifier.padding(12.dp));return@Column}
-
-        MovementThresholdSettings(thresholds=thresholds,onChange={thresholds=it;playing=false;mapFocus=null})
-
+        MovementThresholdSettings(thresholds=thresholds,onChange={updateThresholds(it)})
         Card(Modifier.fillMaxWidth().padding(horizontal=8.dp,vertical=4.dp)){Column(Modifier.padding(10.dp),verticalArrangement=Arrangement.spacedBy(6.dp)){
             Text("Movement Intelligence",style=MaterialTheme.typography.titleSmall);Text("${intelligence.visits.size} towers • ${intelligence.repeatedTowers} repeated • ${intelligence.transitions.size} transitions • ${intelligence.anomalies.size} flags",style=MaterialTheme.typography.bodySmall)
             intelligence.visits.firstOrNull()?.let{top->Text("Most observed: ${top.tower} • ${top.records} record(s) • first ${top.firstSeen} • last ${top.lastSeen}",style=MaterialTheme.typography.bodySmall)}
