@@ -5,6 +5,13 @@ import java.util.Locale
 import kotlin.math.*
 
 object MovementIntelligence {
+    data class Thresholds(
+        val rapidDistanceKm: Double = 10.0,
+        val rapidWindowMinutes: Long = 30,
+        val longGapMinutes: Long = 360,
+        val returnWindowMinutes: Long = 360
+    )
+
     data class TowerVisit(val tower: String, val records: Int, val firstSeen: String, val lastSeen: String, val observedSpanMinutes: Long)
 
     data class Transition(
@@ -33,7 +40,12 @@ object MovementIntelligence {
         val anomalies: List<MovementAnomaly> = emptyList()
     )
 
-    fun build(points: List<GeoPoint>): Summary {
+    fun build(points: List<GeoPoint>, thresholds: Thresholds = Thresholds()): Summary {
+        val rapidDistance = thresholds.rapidDistanceKm.coerceAtLeast(0.1)
+        val rapidWindow = thresholds.rapidWindowMinutes.coerceAtLeast(1)
+        val longGap = thresholds.longGapMinutes.coerceAtLeast(1)
+        val returnWindow = thresholds.returnWindowMinutes.coerceAtLeast(1)
+
         val timed = points.mapNotNull { point -> parse(point.at)?.let { Triple(point, it, towerKey(point)) } }.sortedBy { it.second }
         val visits = timed.groupBy { it.third }.map { (tower, rows) ->
             val sorted = rows.sortedBy { it.second }
@@ -47,13 +59,25 @@ object MovementIntelligence {
             val prior = previous
             if (prior != null) {
                 val gap = ((current.second - prior.second) / 60000L).coerceAtLeast(0)
-                if (gap >= 360) anomalies += MovementAnomaly(AnomalyType.LONG_GAP, "Long observation gap", "$gap minutes between mapped CDR observations", current.first.at, listOf(prior.third, current.third).distinct())
+                if (gap >= longGap) anomalies += MovementAnomaly(
+                    AnomalyType.LONG_GAP,
+                    "Long observation gap",
+                    "$gap minutes between mapped CDR observations (review threshold: $longGap min)",
+                    current.first.at,
+                    listOf(prior.third, current.third).distinct()
+                )
                 if (prior.third != current.third) {
                     val distance = haversineKm(prior.first.latitude, prior.first.longitude, current.first.latitude, current.first.longitude)
                     val speed = if (gap > 0) distance / (gap / 60.0) else null
                     transitions += Transition(prior.third, current.third, current.first.at, gap, distance, speed)
-                    if (gap in 1..30 && distance >= 10.0) {
-                        anomalies += MovementAnomaly(AnomalyType.RAPID_CHANGE, "Rapid tower change", "Mapped towers are ${"%.1f".format(Locale.US, distance)} km apart with a $gap minute observation interval${speed?.let { "; implied rate ${"%.0f".format(Locale.US, it)} km/h" } ?: ""}", current.first.at, listOf(prior.third, current.third))
+                    if (gap in 1..rapidWindow && distance >= rapidDistance) {
+                        anomalies += MovementAnomaly(
+                            AnomalyType.RAPID_CHANGE,
+                            "Rapid tower change",
+                            "Mapped towers are ${"%.1f".format(Locale.US, distance)} km apart with a $gap minute observation interval (review threshold: ≥${"%.1f".format(Locale.US, rapidDistance)} km within $rapidWindow min)${speed?.let { "; implied rate ${"%.0f".format(Locale.US, it)} km/h" } ?: ""}",
+                            current.first.at,
+                            listOf(prior.third, current.third)
+                        )
                     }
                 }
             }
@@ -62,8 +86,15 @@ object MovementIntelligence {
 
         for (i in 2 until timed.size) {
             val a = timed[i - 2]; val b = timed[i - 1]; val c = timed[i]
-            if (a.third == c.third && a.third != b.third && c.second - a.second <= 6 * 60 * 60 * 1000L) {
-                anomalies += MovementAnomaly(AnomalyType.RETURN_PATTERN, "Return to earlier tower", "Observed ${a.third} → ${b.third} → ${c.third} within ${((c.second - a.second) / 60000L)} minutes", c.first.at, listOf(a.third, b.third, c.third))
+            val elapsedMinutes = ((c.second - a.second) / 60000L).coerceAtLeast(0)
+            if (a.third == c.third && a.third != b.third && elapsedMinutes <= returnWindow) {
+                anomalies += MovementAnomaly(
+                    AnomalyType.RETURN_PATTERN,
+                    "Return to earlier tower",
+                    "Observed ${a.third} → ${b.third} → ${c.third} within $elapsedMinutes minutes (review threshold: $returnWindow min)",
+                    c.first.at,
+                    listOf(a.third, b.third, c.third)
+                )
             }
         }
 
