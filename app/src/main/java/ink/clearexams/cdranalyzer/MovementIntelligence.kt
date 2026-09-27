@@ -15,6 +15,7 @@ object MovementIntelligence {
     data class DayNightSummary(val label: String, val observations: Int, val uniqueTowers: Int, val topTower: String?, val topTowerRecords: Int)
     data class HourlySummary(val hour: Int, val observations: Int, val uniqueTowers: Int, val topTower: String?, val topTowerRecords: Int)
     data class WeekdaySummary(val label: String, val observations: Int, val uniqueTowers: Int, val topTower: String?, val topTowerRecords: Int)
+    data class DailySummary(val date: String, val observations: Int, val uniqueTowers: Int, val topTower: String?, val topTowerRecords: Int)
     data class Metrics(
         val mappedObservations: Int,
         val uniqueTowers: Int,
@@ -24,7 +25,7 @@ object MovementIntelligence {
         val mostObservedTower: String?,
         val mostObservedTowerRecords: Int
     )
-    data class Summary(val visits: List<TowerVisit>, val transitions: List<Transition>, val repeatedTowers: Int, val anomalies: List<MovementAnomaly> = emptyList(), val metrics: Metrics = Metrics(0,0,0,0.0,0,null,0), val timePeriods: List<TimePeriodSummary> = emptyList(), val dayNight: List<DayNightSummary> = emptyList(), val hourly: List<HourlySummary> = emptyList(), val weekdays: List<WeekdaySummary> = emptyList())
+    data class Summary(val visits: List<TowerVisit>, val transitions: List<Transition>, val repeatedTowers: Int, val anomalies: List<MovementAnomaly> = emptyList(), val metrics: Metrics = Metrics(0,0,0,0.0,0,null,0), val timePeriods: List<TimePeriodSummary> = emptyList(), val dayNight: List<DayNightSummary> = emptyList(), val hourly: List<HourlySummary> = emptyList(), val weekdays: List<WeekdaySummary> = emptyList(), val daily: List<DailySummary> = emptyList())
 
     fun build(points: List<GeoPoint>, thresholds: Thresholds = Thresholds()): Summary {
         val rapidDistance = thresholds.rapidDistanceKm.coerceAtLeast(0.1); val rapidWindow = thresholds.rapidWindowMinutes.coerceAtLeast(1); val longGap = thresholds.longGapMinutes.coerceAtLeast(1); val returnWindow = thresholds.returnWindowMinutes.coerceAtLeast(1)
@@ -41,9 +42,11 @@ object MovementIntelligence {
         val dayNightGroups=timed.groupBy{dayNightPeriod(it.second)};val dayNight=listOf("Day","Night").map{label->val rows=dayNightGroups[label].orEmpty();val towerTop=rows.groupingBy{it.third}.eachCount().maxByOrNull{it.value};DayNightSummary(label,rows.size,rows.map{it.third}.distinct().size,towerTop?.key,towerTop?.value?:0)}
         val hourlyGroups=timed.groupBy{hourOfDay(it.second)};val hourly=(0..23).map{hour->val rows=hourlyGroups[hour].orEmpty();val towerTop=rows.groupingBy{it.third}.eachCount().maxByOrNull{it.value};HourlySummary(hour,rows.size,rows.map{it.third}.distinct().size,towerTop?.key,towerTop?.value?:0)}
         val weekdayOrder=listOf("Mon","Tue","Wed","Thu","Fri","Sat","Sun");val weekdayGroups=timed.groupBy{weekdayLabel(it.second)};val weekdays=weekdayOrder.map{label->val rows=weekdayGroups[label].orEmpty();val towerTop=rows.groupingBy{it.third}.eachCount().maxByOrNull{it.value};WeekdaySummary(label,rows.size,rows.map{it.third}.distinct().size,towerTop?.key,towerTop?.value?:0)}
-        return Summary(visits,transitions,visits.count{it.records>1},anomalies.distinctBy{"${it.type}|${it.at}|${it.towers.joinToString()}"},metrics,timePeriods,dayNight,hourly,weekdays)
+        val daily=timed.groupBy{dateLabel(it.second)}.map{(date,rows)->val towerTop=rows.groupingBy{it.third}.eachCount().maxByOrNull{it.value};DailySummary(date,rows.size,rows.map{it.third}.distinct().size,towerTop?.key,towerTop?.value?:0)}.sortedBy{it.date}
+        return Summary(visits,transitions,visits.count{it.records>1},anomalies.distinctBy{"${it.type}|${it.at}|${it.towers.joinToString()}"},metrics,timePeriods,dayNight,hourly,weekdays,daily)
     }
 
+    private fun dateLabel(epochMillis:Long):String = SimpleDateFormat("yyyy-MM-dd",Locale.US).format(java.util.Date(epochMillis))
     private fun weekdayLabel(epochMillis:Long):String { return when(Calendar.getInstance().apply{timeInMillis=epochMillis}.get(Calendar.DAY_OF_WEEK)){Calendar.MONDAY->"Mon";Calendar.TUESDAY->"Tue";Calendar.WEDNESDAY->"Wed";Calendar.THURSDAY->"Thu";Calendar.FRIDAY->"Fri";Calendar.SATURDAY->"Sat";else->"Sun"} }
     private fun hourOfDay(epochMillis:Long):Int = Calendar.getInstance().apply{timeInMillis=epochMillis}.get(Calendar.HOUR_OF_DAY)
     private fun dayNightPeriod(epochMillis:Long):String { val hour=Calendar.getInstance().apply{timeInMillis=epochMillis}.get(Calendar.HOUR_OF_DAY); return if(hour in 6..17) "Day" else "Night" }
