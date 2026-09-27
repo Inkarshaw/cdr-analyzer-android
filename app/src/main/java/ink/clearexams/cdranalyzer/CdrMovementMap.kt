@@ -32,21 +32,19 @@ fun CdrMovementMap(points: List<GeoPoint>, modifier: Modifier = Modifier) {
     val defaultThresholds = remember { MovementIntelligence.Thresholds() }
     var fromText by remember(points) { mutableStateOf("") }; var toText by remember(points) { mutableStateOf("") }
     var playing by remember(points) { mutableStateOf(false) }; var showVisits by remember { mutableStateOf(false) }; var showTransitions by remember { mutableStateOf(false) }; var showAnomalies by remember { mutableStateOf(false) }
+    var mapFocus by remember { mutableStateOf<MapFocus?>(null) }; var mapRef by remember { mutableStateOf<MapView?>(null) }
     var thresholds by remember {
-        mutableStateOf(
-            MovementIntelligence.Thresholds(
-                rapidDistanceKm = prefs.getFloat("rapidDistanceKm", defaultThresholds.rapidDistanceKm.toFloat()).toDouble(),
-                rapidWindowMinutes = prefs.getLong("rapidWindowMinutes", defaultThresholds.rapidWindowMinutes),
-                longGapMinutes = prefs.getLong("longGapMinutes", defaultThresholds.longGapMinutes),
-                returnWindowMinutes = prefs.getLong("returnWindowMinutes", defaultThresholds.returnWindowMinutes)
-            )
-        )
+        mutableStateOf(MovementIntelligence.Thresholds(
+            rapidDistanceKm = prefs.getFloat("rapidDistanceKm", defaultThresholds.rapidDistanceKm.toFloat()).toDouble(),
+            rapidWindowMinutes = prefs.getLong("rapidWindowMinutes", defaultThresholds.rapidWindowMinutes),
+            longGapMinutes = prefs.getLong("longGapMinutes", defaultThresholds.longGapMinutes),
+            returnWindowMinutes = prefs.getLong("returnWindowMinutes", defaultThresholds.returnWindowMinutes)
+        ))
     }
     fun updateThresholds(value: MovementIntelligence.Thresholds) {
         thresholds = value; playing = false; mapFocus = null
         prefs.edit().putFloat("rapidDistanceKm", value.rapidDistanceKm.toFloat()).putLong("rapidWindowMinutes", value.rapidWindowMinutes).putLong("longGapMinutes", value.longGapMinutes).putLong("returnWindowMinutes", value.returnWindowMinutes).apply()
     }
-    var mapFocus by remember { mutableStateOf<MapFocus?>(null) }; var mapRef by remember { mutableStateOf<MapView?>(null) }
     fun parse(value: String): Long? { if (value.isBlank()) return null; for (pattern in listOf("dd-MM-yyyy HH:mm","dd/MM/yyyy HH:mm","yyyy-MM-dd HH:mm","dd-MM-yyyy HH:mm:ss","dd/MM/yyyy HH:mm:ss","yyyy-MM-dd HH:mm:ss")) { val p=runCatching{SimpleDateFormat(pattern,Locale.US).apply{isLenient=false}.parse(value.trim())?.time}.getOrNull(); if(p!=null)return p }; return null }
     val fromMillis=parse(fromText); val toMillis=parse(toText); val filterValid=(fromText.isBlank()||fromMillis!=null)&&(toText.isBlank()||toMillis!=null)&&(fromMillis==null||toMillis==null||fromMillis<=toMillis)
     val filteredPoints=remember(points,fromText,toText){if(!filterValid)points else points.filter{p->val t=parse(p.at);t!=null&&(fromMillis==null||t>=fromMillis)&&(toMillis==null||t<=toMillis)}}
