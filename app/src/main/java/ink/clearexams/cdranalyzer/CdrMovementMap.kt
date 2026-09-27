@@ -1,5 +1,6 @@
 package ink.clearexams.cdranalyzer
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -18,6 +19,10 @@ import org.osmdroid.views.overlay.Marker
 import org.osmdroid.views.overlay.Polyline
 import java.text.SimpleDateFormat
 import java.util.Locale
+
+private fun movementTowerKey(point: GeoPoint): String = point.tower.ifBlank {
+    "${"%.5f".format(Locale.US, point.latitude)}, ${"%.5f".format(Locale.US, point.longitude)}"
+}
 
 @Composable
 fun CdrMovementMap(points: List<GeoPoint>, modifier: Modifier = Modifier) {
@@ -60,8 +65,8 @@ fun CdrMovementMap(points: List<GeoPoint>, modifier: Modifier = Modifier) {
         playing = false
     }
 
-    if (showVisits) TowerVisitsDialog(intelligence.visits) { showVisits = false }
-    if (showTransitions) MovementTransitionsDialog(intelligence.transitions) { showTransitions = false }
+    if (showVisits) TowerVisitsDialog(intelligence.visits, activePoints) { showVisits = false }
+    if (showTransitions) MovementTransitionsDialog(intelligence.transitions, activePoints) { showTransitions = false }
 
     Column(modifier.fillMaxWidth()) {
         Card(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp)) {
@@ -120,19 +125,64 @@ fun CdrMovementMap(points: List<GeoPoint>, modifier: Modifier = Modifier) {
 }
 
 @Composable
-private fun TowerVisitsDialog(visits: List<MovementIntelligence.TowerVisit>, onDismiss: () -> Unit) {
+private fun TowerVisitsDialog(visits: List<MovementIntelligence.TowerVisit>, points: List<GeoPoint>, onDismiss: () -> Unit) {
+    var selected by remember { mutableStateOf<MovementIntelligence.TowerVisit?>(null) }
+    selected?.let { visit ->
+        val observations = points.filter { movementTowerKey(it) == visit.tower }
+        MovementObservationsDialog("Tower ${visit.tower}", observations) { selected = null }
+    }
     AlertDialog(onDismissRequest = onDismiss, title = { Text("Tower Visits") }, text = {
         LazyColumn(Modifier.heightIn(max = 520.dp)) { items(visits) { visit ->
-            ListItem(headlineContent = { Text(visit.tower) }, supportingContent = { Text("${visit.records} record(s) • observed span ${visit.observedSpanMinutes} min\nFirst: ${visit.firstSeen}\nLast: ${visit.lastSeen}") }); HorizontalDivider()
+            ListItem(
+                headlineContent = { Text(visit.tower) },
+                supportingContent = { Text("${visit.records} record(s) • observed span ${visit.observedSpanMinutes} min\nFirst: ${visit.firstSeen}\nLast: ${visit.lastSeen}\nTap to inspect observations") },
+                modifier = Modifier.clickable { selected = visit }
+            ); HorizontalDivider()
         } }
     }, confirmButton = { TextButton(onDismiss) { Text("Close") } })
 }
 
 @Composable
-private fun MovementTransitionsDialog(transitions: List<MovementIntelligence.Transition>, onDismiss: () -> Unit) {
+private fun MovementTransitionsDialog(transitions: List<MovementIntelligence.Transition>, points: List<GeoPoint>, onDismiss: () -> Unit) {
+    var selected by remember { mutableStateOf<MovementIntelligence.Transition?>(null) }
+    selected?.let { transition ->
+        val observations = points.filter { movementTowerKey(it) == transition.fromTower || movementTowerKey(it) == transition.toTower }
+        MovementObservationsDialog("${transition.fromTower} → ${transition.toTower}", observations, transition.at) { selected = null }
+    }
     AlertDialog(onDismissRequest = onDismiss, title = { Text("Movement Transitions") }, text = {
         if (transitions.isEmpty()) Text("No tower-to-tower transitions detected.") else LazyColumn(Modifier.heightIn(max = 520.dp)) { items(transitions) { transition ->
-            ListItem(headlineContent = { Text("${transition.fromTower} → ${transition.toTower}") }, supportingContent = { Text("${transition.at}${transition.gapMinutes?.let { " • $it min after previous record" } ?: ""}") }); HorizontalDivider()
+            ListItem(
+                headlineContent = { Text("${transition.fromTower} → ${transition.toTower}") },
+                supportingContent = { Text("${transition.at}${transition.gapMinutes?.let { " • $it min after previous record" } ?: ""}\nTap to inspect related observations") },
+                modifier = Modifier.clickable { selected = transition }
+            ); HorizontalDivider()
         } }
     }, confirmButton = { TextButton(onDismiss) { Text("Close") } })
+}
+
+@Composable
+private fun MovementObservationsDialog(title: String, observations: List<GeoPoint>, focusTime: String = "", onDismiss: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(title) },
+        text = {
+            Column {
+                Text("${observations.size} mapped CDR observation(s)", style = MaterialTheme.typography.bodySmall)
+                if (focusTime.isNotBlank()) Text("Transition recorded at: $focusTime", style = MaterialTheme.typography.labelMedium)
+                Text("Coordinates represent the mapped tower/location supplied or resolved for the CDR record; they do not establish the handset's exact position.", style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(vertical = 6.dp))
+                LazyColumn(Modifier.heightIn(max = 460.dp)) {
+                    items(observations) { point ->
+                        ListItem(
+                            headlineContent = { Text(point.at.ifBlank { "Time unavailable" }) },
+                            supportingContent = {
+                                Text("Tower: ${movementTowerKey(point)}\nLatitude: ${"%.6f".format(Locale.US, point.latitude)} • Longitude: ${"%.6f".format(Locale.US, point.longitude)}")
+                            }
+                        )
+                        HorizontalDivider()
+                    }
+                }
+            }
+        },
+        confirmButton = { TextButton(onDismiss) { Text("Back") } }
+    )
 }
