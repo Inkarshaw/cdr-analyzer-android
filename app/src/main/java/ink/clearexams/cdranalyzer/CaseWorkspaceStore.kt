@@ -30,7 +30,26 @@ class CaseWorkspaceStore(private val context:Context){
  fun commonContacts(w:CaseWorkspace,minimumDatasets:Int=2):List<CommonContact>{if(w.datasets.size<minimumDatasets)return emptyList();val per=w.datasets.associate{d->d.name to d.records.map{it.otherParty.ifBlank{it.number}}.filter{it.isNotBlank()}.groupingBy{it}.eachCount()};return per.values.flatMap{it.keys}.toSet().mapNotNull{n->val hits=per.filterValues{it.containsKey(n)};if(hits.size<minimumDatasets)null else CommonContact(n,hits.size,hits.values.sumOf{it[n]?:0},hits.keys.toList())}.sortedWith(compareByDescending<CommonContact>{it.datasetCount}.thenByDescending{it.totalInteractions})}
  fun linkProfiles(w:CaseWorkspace):List<LinkProfile>{val all=w.datasets.flatMap{d->d.records.map{d.name to it}};val numbers=all.map{it.second.otherParty.ifBlank{it.second.number}}.filter{it.isNotBlank()}.distinct();return numbers.map{n->val hits=all.filter{(_,r)->r.otherParty==n||r.number==n};LinkProfile(n,hits.size,hits.map{it.first}.distinct(),hits.map{it.second.imei}.filter{it.isNotBlank()}.distinct(),hits.map{it.second.imsi}.filter{it.isNotBlank()}.distinct(),hits.map{it.second}.filter{it.cellId.isNotBlank()}.map{"${it.lac}/${it.cellId}"}.distinct())}.sortedByDescending{it.totalInteractions}}
  fun linkedRecords(w:CaseWorkspace,number:String):List<LinkedRecord>{if(number.isBlank())return emptyList();return w.datasets.flatMap{d->d.records.filter{r->r.otherParty==number||r.number==number}.map{LinkedRecord(d.name,it)}}.sortedBy{it.record.dateTime}}
- fun sharedTowers(w:CaseWorkspace,first:String,second:String):List<SharedTower>{fun events(number:String)=w.datasets.flatMap{d->d.records.filter{r->(r.otherParty==number||r.number==number)&&r.cellId.isNotBlank()}.map{r->("${r.lac}/${r.cellId}") to TowerEvent(d.name,r.dateTime,r.direction)}}.groupBy({it.first},{it.second});val a=events(first);val b=events(second);return a.keys.intersect(b.keys).map{tower->SharedTower(tower,a[tower]?.size?:0,b[tower]?.size?:0,a[tower].orEmpty().sortedBy{it.dateTime},b[tower].orEmpty().sortedBy{it.dateTime})}.sortedByDescending{it.firstCount+it.secondCount}}
+ fun sharedTowers(w:CaseWorkspace,first:String,second:String):List<SharedTower>{
+  fun events(number:String):Map<String,List<TowerEvent>>{
+   val pairs=mutableListOf<Pair<String,TowerEvent>>()
+   for(dataset in w.datasets){
+    for(record in dataset.records){
+     val matches=record.otherParty==number||record.number==number
+     if(matches&&record.cellId.isNotBlank()){
+      val tower="${record.lac}/${record.cellId}"
+      pairs.add(tower to TowerEvent(dataset.name,record.dateTime,record.direction))
+     }
+    }
+   }
+   return pairs.groupBy({it.first},{it.second})
+  }
+  val a=events(first)
+  val b=events(second)
+  return a.keys.intersect(b.keys).map{tower->
+   SharedTower(tower,a[tower]?.size?:0,b[tower]?.size?:0,a[tower].orEmpty().sortedBy{it.dateTime},b[tower].orEmpty().sortedBy{it.dateTime})
+  }.sortedByDescending{it.firstCount+it.secondCount}
+ }
  fun coLocationMatches(w:CaseWorkspace,first:String,second:String,windowMinutes:Int):List<CoLocationMatch>{
   val out=mutableListOf<CoLocationMatch>()
   for(shared in sharedTowers(w,first,second)){
