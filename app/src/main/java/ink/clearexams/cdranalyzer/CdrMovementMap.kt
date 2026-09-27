@@ -20,7 +20,18 @@ import org.osmdroid.views.overlay.Marker
 import org.osmdroid.views.overlay.Polyline
 import java.text.SimpleDateFormat
 import java.util.Locale
+import java.util.Calendar
 
+private fun movementHour(value:String):Int? {
+    val epoch=run {
+        for(pattern in listOf("dd-MM-yyyy HH:mm","dd/MM/yyyy HH:mm","yyyy-MM-dd HH:mm","dd-MM-yyyy HH:mm:ss","dd/MM/yyyy HH:mm:ss","yyyy-MM-dd HH:mm:ss")){
+            val parsed=runCatching{SimpleDateFormat(pattern,Locale.US).apply{isLenient=false}.parse(value.trim())?.time}.getOrNull()
+            if(parsed!=null) return@run parsed
+        }
+        return@run null
+    } ?: return null
+    return Calendar.getInstance().apply{timeInMillis=epoch}.get(Calendar.HOUR_OF_DAY)
+}
 private fun movementTowerKey(point: GeoPoint): String = point.tower.ifBlank { "${"%.5f".format(Locale.US, point.latitude)}, ${"%.5f".format(Locale.US, point.longitude)}" }
 private data class MapFocus(val points: List<GeoPoint>, val label: String)
 private const val MOVEMENT_PREFS = "movement_review_settings"
@@ -42,7 +53,13 @@ fun CdrMovementMap(points: List<GeoPoint>, modifier: Modifier = Modifier) {
         MovementSummaryCard(intel.metrics)
         TimeOfDayMovementCard(intel.timePeriods)
         DayNightMovementCard(intel.dayNight)
-        HourlyActivityCard(intel.hourly)
+        HourlyActivityCard(intel.hourly){hour->
+            val observations=active.filter{movementHour(it.at)==hour}
+            if(observations.isNotEmpty()){
+                playing=false
+                mapFocus=MapFocus(observations,"%02d:00–%02d:59".format(Locale.US,hour,hour))
+            }
+        }
         MovementThresholdSettings(thresholds=thresholds,onChange={updateThresholds(it)})
         Card(Modifier.fillMaxWidth().padding(horizontal=8.dp,vertical=4.dp)){Column(Modifier.padding(10.dp),verticalArrangement=Arrangement.spacedBy(6.dp)){Text("Movement Intelligence",style=MaterialTheme.typography.titleSmall);Text("${intel.visits.size} towers • ${intel.repeatedTowers} repeated • ${intel.transitions.size} transitions • ${intel.anomalies.size} flags",style=MaterialTheme.typography.bodySmall);intel.visits.firstOrNull()?.let{top->Text("Most observed: ${top.tower} • ${top.records} record(s) • first ${top.firstSeen} • last ${top.lastSeen}",style=MaterialTheme.typography.bodySmall)};Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(6.dp)){OutlinedButton({showVisits=true},Modifier.weight(1f),enabled=intel.visits.isNotEmpty()){Text("Visits")};OutlinedButton({showTransitions=true},Modifier.weight(1f),enabled=intel.transitions.isNotEmpty()){Text("Transitions")};OutlinedButton({showAnomalies=true},Modifier.weight(1f),enabled=intel.anomalies.isNotEmpty()){Text("Flags (${intel.anomalies.size})")}};Text("Flags identify patterns for review only. Tower observations do not establish the handset's exact position or continuous travel.",style=MaterialTheme.typography.labelSmall)}}
         mapFocus?.let{f->Card(Modifier.fillMaxWidth().padding(horizontal=8.dp,vertical=4.dp)){Row(Modifier.fillMaxWidth().padding(10.dp),horizontalArrangement=Arrangement.SpaceBetween){Column(Modifier.weight(1f)){Text("Map focus",style=MaterialTheme.typography.titleSmall);Text("${f.label} • ${f.points.size} highlighted observation(s)",style=MaterialTheme.typography.bodySmall)};TextButton({mapFocus=null}){Text("Clear")}}}}
@@ -52,7 +69,7 @@ fun CdrMovementMap(points: List<GeoPoint>, modifier: Modifier = Modifier) {
     };DisposableEffect(Unit){onDispose{playing=false;mapRef?.onDetach()}}
 }
 
-@Composable private fun HourlyActivityCard(hours:List<MovementIntelligence.HourlySummary>){
+@Composable private fun HourlyActivityCard(hours:List<MovementIntelligence.HourlySummary>,onHourSelected:(Int)->Unit){
     val peak=hours.maxByOrNull{it.observations}
     Card(Modifier.fillMaxWidth().padding(horizontal=8.dp,vertical=4.dp)){
         Column(Modifier.padding(10.dp),verticalArrangement=Arrangement.spacedBy(6.dp)){
@@ -63,7 +80,7 @@ fun CdrMovementMap(points: List<GeoPoint>, modifier: Modifier = Modifier) {
             }
             LazyRow(horizontalArrangement=Arrangement.spacedBy(6.dp)){
                 items(hours){h->
-                    Surface(tonalElevation=1.dp,shape=MaterialTheme.shapes.small){
+                    Surface(modifier=Modifier.clickable(enabled=h.observations>0){onHourSelected(h.hour)},tonalElevation=1.dp,shape=MaterialTheme.shapes.small){
                         Column(Modifier.padding(horizontal=9.dp,vertical=7.dp)){
                             Text("%02d".format(Locale.US,h.hour),style=MaterialTheme.typography.labelMedium)
                             Text(h.observations.toString(),style=MaterialTheme.typography.titleMedium)
@@ -72,7 +89,7 @@ fun CdrMovementMap(points: List<GeoPoint>, modifier: Modifier = Modifier) {
                     }
                 }
             }
-            Text("00–23 values show counts of timestamped mapped tower observations by hour; they do not represent continuous handset tracking.",style=MaterialTheme.typography.labelSmall)
+            Text("Tap an hour with observations to highlight those mapped CDR records on the map. 00–23 counts do not represent continuous handset tracking.",style=MaterialTheme.typography.labelSmall)
         }
     }
 }
