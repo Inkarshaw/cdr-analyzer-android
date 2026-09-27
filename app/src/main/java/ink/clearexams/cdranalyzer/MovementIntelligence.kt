@@ -1,7 +1,8 @@
 package ink.clearexams.cdranalyzer
 
 import java.text.SimpleDateFormat
-import java.util.Locale\nimport java.util.Calendar
+import java.util.Locale
+import java.util.Calendar
 import kotlin.math.*
 
 object MovementIntelligence {
@@ -9,7 +10,8 @@ object MovementIntelligence {
     data class TowerVisit(val tower: String, val records: Int, val firstSeen: String, val lastSeen: String, val observedSpanMinutes: Long)
     data class Transition(val fromTower: String, val toTower: String, val at: String, val gapMinutes: Long?, val distanceKm: Double? = null, val impliedSpeedKmh: Double? = null)
     enum class AnomalyType { RAPID_CHANGE, LONG_GAP, RETURN_PATTERN }
-    data class MovementAnomaly(val type: AnomalyType, val title: String, val detail: String, val at: String, val towers: List<String>)\n    data class TimePeriodSummary(val label: String, val observations: Int, val topTower: String?, val topTowerRecords: Int)
+    data class MovementAnomaly(val type: AnomalyType, val title: String, val detail: String, val at: String, val towers: List<String>)
+    data class TimePeriodSummary(val label: String, val observations: Int, val topTower: String?, val topTowerRecords: Int)
     data class Metrics(
         val mappedObservations: Int,
         val uniqueTowers: Int,
@@ -32,10 +34,12 @@ object MovementIntelligence {
             previous=current}
         for(i in 2 until timed.size){val a=timed[i-2];val b=timed[i-1];val c=timed[i];val elapsed=((c.second-a.second)/60000L).coerceAtLeast(0);if(a.third==c.third&&a.third!=b.third&&elapsed<=returnWindow)anomalies+=MovementAnomaly(AnomalyType.RETURN_PATTERN,"Return to earlier tower","Observed ${a.third} → ${b.third} → ${c.third} within $elapsed minutes (review threshold: $returnWindow min)",c.first.at,listOf(a.third,b.third,c.third))}
         val top=visits.firstOrNull();val metrics=Metrics(timed.size,visits.size,transitions.size,approximatePathKm,longestGapMinutes,top?.tower,top?.records?:0)
-        return Summary(visits,transitions,visits.count{it.records>1},anomalies.distinctBy{"${it.type}|${it.at}|${it.towers.joinToString()}"},metrics)
+        val periodOrder=listOf("Morning","Afternoon","Evening","Night");val grouped=timed.groupBy{timePeriod(it.second)};val timePeriods=periodOrder.map{label->val rows=grouped[label].orEmpty();val towerTop=rows.groupingBy{it.third}.eachCount().maxByOrNull{it.value};TimePeriodSummary(label,rows.size,towerTop?.key,towerTop?.value?:0)}
+        return Summary(visits,transitions,visits.count{it.records>1},anomalies.distinctBy{"${it.type}|${it.at}|${it.towers.joinToString()}"},metrics,timePeriods)
     }
 
-    private fun timePeriod(epochMillis:Long):String { val hour=Calendar.getInstance().apply{timeInMillis=epochMillis}.get(Calendar.HOUR_OF_DAY); return when(hour){ in 6..11 -> "Morning"; in 12..16 -> "Afternoon"; in 17..21 -> "Evening"; else -> "Night" } }\n    private fun haversineKm(lat1:Double,lon1:Double,lat2:Double,lon2:Double):Double{val r=6371.0088;val dLat=Math.toRadians(lat2-lat1);val dLon=Math.toRadians(lon2-lon1);val a=sin(dLat/2).pow(2)+cos(Math.toRadians(lat1))*cos(Math.toRadians(lat2))*sin(dLon/2).pow(2);return 2*r*asin(sqrt(a.coerceIn(0.0,1.0)))}
+    private fun timePeriod(epochMillis:Long):String { val hour=Calendar.getInstance().apply{timeInMillis=epochMillis}.get(Calendar.HOUR_OF_DAY); return when(hour){ in 6..11 -> "Morning"; in 12..16 -> "Afternoon"; in 17..21 -> "Evening"; else -> "Night" } }
+    private fun haversineKm(lat1:Double,lon1:Double,lat2:Double,lon2:Double):Double{val r=6371.0088;val dLat=Math.toRadians(lat2-lat1);val dLon=Math.toRadians(lon2-lon1);val a=sin(dLat/2).pow(2)+cos(Math.toRadians(lat1))*cos(Math.toRadians(lat2))*sin(dLon/2).pow(2);return 2*r*asin(sqrt(a.coerceIn(0.0,1.0)))}
     private fun towerKey(point:GeoPoint):String=point.tower.ifBlank{"${"%.5f".format(Locale.US,point.latitude)}, ${"%.5f".format(Locale.US,point.longitude)}"}
     private fun parse(value:String):Long?{for(pattern in listOf("dd-MM-yyyy HH:mm","dd/MM/yyyy HH:mm","yyyy-MM-dd HH:mm","dd-MM-yyyy HH:mm:ss","dd/MM/yyyy HH:mm:ss","yyyy-MM-dd HH:mm:ss")){val result=runCatching{SimpleDateFormat(pattern,Locale.US).apply{isLenient=false}.parse(value.trim())?.time}.getOrNull();if(result!=null)return result};return null}
 }
