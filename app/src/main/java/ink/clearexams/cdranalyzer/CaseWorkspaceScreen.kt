@@ -7,11 +7,13 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 
 @Composable
 fun CaseWorkspaceScreen(store:CaseWorkspaceStore,currentRows:List<CdrRecord>,currentFileName:String,onLoadDataset:(List<CdrRecord>,String)->Unit){
- var cases by remember{mutableStateOf(store.list())};var selected by remember{mutableStateOf<CaseWorkspace?>(null)};var showNew by remember{mutableStateOf(false)};var showCommon by remember{mutableStateOf(false)};var showLinks by remember{mutableStateOf(false)};var showShared by remember{mutableStateOf(false)};var showTimeline by remember{mutableStateOf(false)};var showGraph by remember{mutableStateOf(false)};var fromText by remember{mutableStateOf("")};var toText by remember{mutableStateOf("")}
+ val context=LocalContext.current
+ var cases by remember{mutableStateOf(store.list())};var selected by remember{mutableStateOf<CaseWorkspace?>(null)};var showNew by remember{mutableStateOf(false)};var showCommon by remember{mutableStateOf(false)};var showLinks by remember{mutableStateOf(false)};var showShared by remember{mutableStateOf(false)};var showTimeline by remember{mutableStateOf(false)};var showGraph by remember{mutableStateOf(false)};var fromText by remember{mutableStateOf("")};var toText by remember{mutableStateOf("")};var reportStatus by remember{mutableStateOf("")}
  fun refresh(id:String?=selected?.id){cases=store.list();selected=id?.let(store::load)}
  if(showNew)NewCaseDialog({showNew=false}){title,crime->selected=store.create(title,crime);refresh(selected?.id);showNew=false}
  selected?.let{w->
@@ -27,6 +29,7 @@ fun CaseWorkspaceScreen(store:CaseWorkspaceStore,currentRows:List<CdrRecord>,cur
    if(w.datasets.isNotEmpty())item{Card(Modifier.fillMaxWidth()){Column(Modifier.padding(12.dp),verticalArrangement=Arrangement.spacedBy(6.dp)){Text("Analysis Date / Time Filter",style=MaterialTheme.typography.titleSmall);OutlinedTextField(fromText,{fromText=it},label={Text("From: DD-MM-YYYY HH:MM")},singleLine=true,modifier=Modifier.fillMaxWidth());OutlinedTextField(toText,{toText=it},label={Text("To: DD-MM-YYYY HH:MM")},singleLine=true,modifier=Modifier.fillMaxWidth());if(!filterValid)Text("Invalid date/time range. Analysis is using all records.",color=MaterialTheme.colorScheme.error,style=MaterialTheme.typography.bodySmall)else if(timeFilter.active)Text("Filter active: $filteredCount of $originalCount records",style=MaterialTheme.typography.bodySmall)else Text("No filter: all $originalCount records",style=MaterialTheme.typography.bodySmall);if(timeFilter.active)OutlinedButton({fromText="";toText=""},Modifier.fillMaxWidth()){Text("Clear Date / Time Filter")}}}}
    if(w.datasets.isNotEmpty())item{Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(8.dp)){Button({showTimeline=true},Modifier.weight(1f),enabled=filterValid){Text("Timeline")};Button({showGraph=true},Modifier.weight(1f),enabled=filterValid){Text("Relationship Graph")}}}
    if(w.datasets.size>=2){item{Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(8.dp)){Button({showCommon=true},Modifier.weight(1f),enabled=filterValid){Text("Common Contacts")};Button({showLinks=true},Modifier.weight(1f),enabled=filterValid){Text("Link Analysis")}}};item{Button({showShared=true},Modifier.fillMaxWidth(),enabled=filterValid){Text("Shared Towers / Co-location")}}}
+   if(w.datasets.isNotEmpty())item{Button(onClick={runCatching{val f=CaseReportExporter.export(context,w,timeFilter);reportStatus="Report created: ${f.name}";CaseReportExporter.share(context,f)}.onFailure{reportStatus="Report export failed: ${it.message?:"Unknown error"}"}},modifier=Modifier.fillMaxWidth(),enabled=filterValid){Text("Export / Share Investigation Report")};if(reportStatus.isNotBlank())Text(reportStatus,style=MaterialTheme.typography.bodySmall)}
    item{Text("Saved CDRs",style=MaterialTheme.typography.titleMedium)}
    if(w.datasets.isEmpty())item{Text("No CDR saved in this case yet. Import a CDR, then tap Add Current CDR.")}else items(w.datasets){d->Card(Modifier.fillMaxWidth().clickable{onLoadDataset(d.records,d.name)}){Column(Modifier.padding(12.dp)){Text(d.name,style=MaterialTheme.typography.titleSmall);Text("${d.records.size} records",style=MaterialTheme.typography.bodySmall);Text("Tap to load for analysis",style=MaterialTheme.typography.labelSmall)}}}
    item{Text("Case Notes",style=MaterialTheme.typography.titleMedium)}
