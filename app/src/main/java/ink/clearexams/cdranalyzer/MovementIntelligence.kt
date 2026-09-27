@@ -17,6 +17,7 @@ object MovementIntelligence {
     data class WeekdaySummary(val label: String, val observations: Int, val uniqueTowers: Int, val topTower: String?, val topTowerRecords: Int)
     data class DailySummary(val date: String, val observations: Int, val uniqueTowers: Int, val topTower: String?, val topTowerRecords: Int)
     data class TransitionPattern(val fromTower: String, val toTower: String, val count: Int, val averageGapMinutes: Double, val averageDistanceKm: Double)
+    data class ObservationRun(val tower: String, val records: Int, val firstSeen: String, val lastSeen: String, val spanMinutes: Long)
     data class Metrics(
         val mappedObservations: Int,
         val uniqueTowers: Int,
@@ -26,7 +27,7 @@ object MovementIntelligence {
         val mostObservedTower: String?,
         val mostObservedTowerRecords: Int
     )
-    data class Summary(val visits: List<TowerVisit>, val transitions: List<Transition>, val repeatedTowers: Int, val anomalies: List<MovementAnomaly> = emptyList(), val metrics: Metrics = Metrics(0,0,0,0.0,0,null,0), val timePeriods: List<TimePeriodSummary> = emptyList(), val dayNight: List<DayNightSummary> = emptyList(), val hourly: List<HourlySummary> = emptyList(), val weekdays: List<WeekdaySummary> = emptyList(), val daily: List<DailySummary> = emptyList(), val transitionPatterns: List<TransitionPattern> = emptyList())
+    data class Summary(val visits: List<TowerVisit>, val transitions: List<Transition>, val repeatedTowers: Int, val anomalies: List<MovementAnomaly> = emptyList(), val metrics: Metrics = Metrics(0,0,0,0.0,0,null,0), val timePeriods: List<TimePeriodSummary> = emptyList(), val dayNight: List<DayNightSummary> = emptyList(), val hourly: List<HourlySummary> = emptyList(), val weekdays: List<WeekdaySummary> = emptyList(), val daily: List<DailySummary> = emptyList(), val transitionPatterns: List<TransitionPattern> = emptyList(), val observationRuns: List<ObservationRun> = emptyList())
 
     fun build(points: List<GeoPoint>, thresholds: Thresholds = Thresholds()): Summary {
         val rapidDistance = thresholds.rapidDistanceKm.coerceAtLeast(0.1); val rapidWindow = thresholds.rapidWindowMinutes.coerceAtLeast(1); val longGap = thresholds.longGapMinutes.coerceAtLeast(1); val returnWindow = thresholds.returnWindowMinutes.coerceAtLeast(1)
@@ -45,7 +46,8 @@ object MovementIntelligence {
         val weekdayOrder=listOf("Mon","Tue","Wed","Thu","Fri","Sat","Sun");val weekdayGroups=timed.groupBy{weekdayLabel(it.second)};val weekdays=weekdayOrder.map{label->val rows=weekdayGroups[label].orEmpty();val towerTop=rows.groupingBy{it.third}.eachCount().maxByOrNull{it.value};WeekdaySummary(label,rows.size,rows.map{it.third}.distinct().size,towerTop?.key,towerTop?.value?:0)}
         val daily=timed.groupBy{dateLabel(it.second)}.map{(date,rows)->val towerTop=rows.groupingBy{it.third}.eachCount().maxByOrNull{it.value};DailySummary(date,rows.size,rows.map{it.third}.distinct().size,towerTop?.key,towerTop?.value?:0)}.sortedBy{it.date}
         val transitionPatterns=transitions.groupBy{it.fromTower to it.toTower}.map{(pair,rows)->TransitionPattern(pair.first,pair.second,rows.size,rows.mapNotNull{it.gapMinutes}.average().takeIf{!it.isNaN()}?:0.0,rows.mapNotNull{it.distanceKm}.average().takeIf{!it.isNaN()}?:0.0)}.sortedWith(compareByDescending<TransitionPattern>{it.count}.thenBy{it.averageGapMinutes})
-        return Summary(visits,transitions,visits.count{it.records>1},anomalies.distinctBy{"${it.type}|${it.at}|${it.towers.joinToString()}"},metrics,timePeriods,dayNight,hourly,weekdays,daily,transitionPatterns)
+        val observationRuns=mutableListOf<ObservationRun>();if(timed.isNotEmpty()){var start=0;for(i in 1..timed.size){if(i==timed.size||timed[i].third!=timed[start].third){val first=timed[start];val last=timed[i-1];val count=i-start;val span=((last.second-first.second)/60000L).coerceAtLeast(0);observationRuns+=ObservationRun(first.third,count,first.first.at,last.first.at,span);start=i}}};val sortedRuns=observationRuns.filter{it.records>1}.sortedWith(compareByDescending<ObservationRun>{it.spanMinutes}.thenByDescending{it.records})
+        return Summary(visits,transitions,visits.count{it.records>1},anomalies.distinctBy{"${it.type}|${it.at}|${it.towers.joinToString()}"},metrics,timePeriods,dayNight,hourly,weekdays,daily,transitionPatterns,sortedRuns)
     }
 
     private fun dateLabel(epochMillis:Long):String = SimpleDateFormat("yyyy-MM-dd",Locale.US).format(java.util.Date(epochMillis))
