@@ -10,6 +10,7 @@ data class CaseWorkspace(val id:String=UUID.randomUUID().toString(),val title:St
 data class CdrDataset(val id:String=UUID.randomUUID().toString(),val name:String,val importedAt:Long=System.currentTimeMillis(),val records:List<CdrRecord> = emptyList())
 data class CommonContact(val number:String,val datasetCount:Int,val totalInteractions:Int,val datasetNames:List<String>)
 data class LinkProfile(val number:String,val totalInteractions:Int,val datasetNames:List<String>,val imeis:List<String>,val imsis:List<String>,val towers:List<String>)
+data class LinkedRecord(val datasetName:String,val record:CdrRecord)
 
 class CaseWorkspaceStore(private val context:Context){
  private val root:File by lazy{File(context.filesDir,"cdr_cases").apply{mkdirs()}}
@@ -34,6 +35,11 @@ class CaseWorkspaceStore(private val context:Context){
    val hits=all.filter{(_,r)->r.otherParty==n||r.number==n}
    LinkProfile(n,hits.size,hits.map{it.first}.distinct(),hits.map{it.second.imei}.filter{it.isNotBlank()}.distinct(),hits.map{it.second.imsi}.filter{it.isNotBlank()}.distinct(),hits.map{it.second}.filter{it.cellId.isNotBlank()}.map{"${it.lac}/${it.cellId}"}.distinct())
   }.sortedByDescending{it.totalInteractions}
+ }
+
+ fun linkedRecords(w:CaseWorkspace,number:String):List<LinkedRecord>{
+  if(number.isBlank())return emptyList()
+  return w.datasets.flatMap{d->d.records.filter{r->r.otherParty==number||r.number==number}.map{LinkedRecord(d.name,it)}}.sortedBy{it.record.dateTime}
  }
 
  private fun encode(w:CaseWorkspace)=JSONObject().apply{put("id",w.id);put("title",w.title);put("crimeNumber",w.crimeNumber);put("notes",w.notes);put("createdAt",w.createdAt);put("updatedAt",w.updatedAt);put("datasets",JSONArray().apply{w.datasets.forEach{put(encodeDataset(it))}})}
