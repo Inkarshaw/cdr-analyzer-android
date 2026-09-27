@@ -1,10 +1,10 @@
 package ink.clearexams.cdranalyzer
 
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.input.KeyboardOptions
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 
@@ -19,6 +19,11 @@ fun MovementThresholdSettings(
     var rapidMinutes by remember(thresholds.rapidWindowMinutes) { mutableStateOf(thresholds.rapidWindowMinutes.toString()) }
     var gapMinutes by remember(thresholds.longGapMinutes) { mutableStateOf(thresholds.longGapMinutes.toString()) }
     var returnMinutes by remember(thresholds.returnWindowMinutes) { mutableStateOf(thresholds.returnWindowMinutes.toString()) }
+
+    val valid = distance.toDoubleOrNull()?.let { it > 0 } == true &&
+        rapidMinutes.toLongOrNull()?.let { it > 0 } == true &&
+        gapMinutes.toLongOrNull()?.let { it > 0 } == true &&
+        returnMinutes.toLongOrNull()?.let { it > 0 } == true
 
     fun apply() {
         val d = distance.toDoubleOrNull()
@@ -44,8 +49,9 @@ fun MovementThresholdSettings(
                 OutlinedTextField(rapidMinutes, { rapidMinutes = it }, label = { Text("Rapid-change window (minutes)") }, singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), modifier = Modifier.fillMaxWidth())
                 OutlinedTextField(gapMinutes, { gapMinutes = it }, label = { Text("Long-gap threshold (minutes)") }, singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), modifier = Modifier.fillMaxWidth())
                 OutlinedTextField(returnMinutes, { returnMinutes = it }, label = { Text("Return-pattern window (minutes)") }, singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), modifier = Modifier.fillMaxWidth())
+                if (!valid) Text("Enter positive numeric values in all four fields.", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Button(onClick = { apply() }, modifier = Modifier.weight(1f)) { Text("Apply") }
+                    Button(onClick = { apply() }, enabled = valid, modifier = Modifier.weight(1f)) { Text("Apply") }
                     OutlinedButton(onClick = {
                         val defaults = MovementIntelligence.Thresholds()
                         distance = defaults.rapidDistanceKm.toString(); rapidMinutes = defaults.rapidWindowMinutes.toString(); gapMinutes = defaults.longGapMinutes.toString(); returnMinutes = defaults.returnWindowMinutes.toString(); onChange(defaults)
