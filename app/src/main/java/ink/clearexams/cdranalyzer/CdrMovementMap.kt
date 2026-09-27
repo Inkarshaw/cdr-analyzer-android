@@ -104,6 +104,11 @@ fun CdrMovementMap(points: List<GeoPoint>, modifier: Modifier = Modifier) {
             val observations=active.filter{val tower=movementTowerKey(it);tower==pattern.fromTower||tower==pattern.toTower}
             if(observations.isNotEmpty()){playing=false;mapFocus=MapFocus(observations,"${pattern.fromTower} → ${pattern.toTower}")}
         }
+        ObservationRunsCard(intel.observationRuns){run->
+            val start=parse(run.firstSeen);val end=parse(run.lastSeen)
+            val observations=active.filter{p->val t=parse(p.at);movementTowerKey(p)==run.tower&&t!=null&&start!=null&&end!=null&&t>=start&&t<=end}
+            if(observations.isNotEmpty()){playing=false;mapFocus=MapFocus(observations,"Observation run • ${run.tower}")}
+        }
         MovementThresholdSettings(thresholds=thresholds,onChange={updateThresholds(it)})
         MovementFlagFilters(rapidFlagCount,longGapFlagCount,returnFlagCount,showRapidFlags,showLongGapFlags,showReturnFlags,{showRapidFlags=it;showAnomalies=false;mapFocus=null},{showLongGapFlags=it;showAnomalies=false;mapFocus=null},{showReturnFlags=it;showAnomalies=false;mapFocus=null})
         Card(Modifier.fillMaxWidth().padding(horizontal=8.dp,vertical=4.dp)){Column(Modifier.padding(10.dp),verticalArrangement=Arrangement.spacedBy(6.dp)){Text("Movement Intelligence",style=MaterialTheme.typography.titleSmall);Text("${intel.visits.size} towers • ${intel.repeatedTowers} repeated • ${intel.transitions.size} transitions • ${visibleAnomalies.size} visible / ${intel.anomalies.size} total flags",style=MaterialTheme.typography.bodySmall);intel.visits.firstOrNull()?.let{top->Text("Most observed: ${top.tower} • ${top.records} record(s) • first ${top.firstSeen} • last ${top.lastSeen}",style=MaterialTheme.typography.bodySmall)};Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(6.dp)){OutlinedButton({showVisits=true},Modifier.weight(1f),enabled=intel.visits.isNotEmpty()){Text("Visits")};OutlinedButton({showTransitions=true},Modifier.weight(1f),enabled=intel.transitions.isNotEmpty()){Text("Transitions")};OutlinedButton({showAnomalies=true},Modifier.weight(1f),enabled=visibleAnomalies.isNotEmpty()){Text("Flags (${visibleAnomalies.size})")}};if(visibleAnomalies.isEmpty()&&intel.anomalies.isNotEmpty())Text("No review flag types are currently selected.",style=MaterialTheme.typography.bodySmall);Text("Flags identify patterns for review only. Tower observations do not establish the handset's exact position or continuous travel.",style=MaterialTheme.typography.labelSmall)}}
@@ -112,6 +117,26 @@ fun CdrMovementMap(points: List<GeoPoint>, modifier: Modifier = Modifier) {
         if(active.isNotEmpty())Text(if(mapFocus!=null)"Showing selected movement evidence on map" else if(playing||safe<active.lastIndex)"Playback: ${safe+1} / ${active.size} • ${active[safe].at.ifBlank{"Time unavailable"}}" else "Showing all ${active.size} mapped records",style=MaterialTheme.typography.bodySmall,modifier=Modifier.padding(horizontal=12.dp,vertical=2.dp))
         AndroidView(modifier=Modifier.fillMaxWidth().height(360.dp),factory={ctx->Configuration.getInstance().userAgentValue=ctx.packageName;Configuration.getInstance().load(ctx,ctx.getSharedPreferences("osmdroid",0));MapView(ctx).apply{setMultiTouchControls(true);minZoomLevel=3.0;maxZoomLevel=20.0;mapRef=this}},update={map->map.overlays.clear();if(active.isEmpty())return@AndroidView;val focus=mapFocus;val visible=if(focus!=null)focus.points else if(safe>=active.lastIndex)active else active.take(safe+1);val route=visible.map{OsmGeoPoint(it.latitude,it.longitude)};if(route.size>1)map.overlays.add(Polyline().apply{setPoints(route);outlinePaint.strokeWidth=if(focus!=null)11f else 7f});visible.forEachIndexed{i,p->map.overlays.add(Marker(map).apply{position=OsmGeoPoint(p.latitude,p.longitude);setAnchor(Marker.ANCHOR_CENTER,Marker.ANCHOR_BOTTOM);title=if(focus!=null)"Selected • ${p.tower.ifBlank{"Mapped CDR point"}}" else p.tower.ifBlank{"Mapped CDR point"};snippet=p.at.ifBlank{"Time unavailable"};subDescription=if(focus!=null)"Highlighted movement observation" else if(i==0)"First mapped record" else if(i==visible.lastIndex&&visible.size<active.size)"Current playback point" else if(i==visible.lastIndex)"Last mapped record" else "CDR mapped record"})};route.lastOrNull()?.let{c->if(focus!=null){if(route.size==1){map.controller.setZoom(17.0);map.controller.animateTo(c)}else{val n=route.maxOf{it.latitude};val s=route.minOf{it.latitude};val e=route.maxOf{it.longitude};val w=route.minOf{it.longitude};map.post{map.zoomToBoundingBox(BoundingBox(n,e,s,w),true,96)}}}else if(visible.size<active.size){map.controller.setZoom(maxOf(map.zoomLevelDouble,15.0));map.controller.animateTo(c)}else if(route.size==1){map.controller.setZoom(16.0);map.controller.setCenter(c)}else{val n=route.maxOf{it.latitude};val s=route.minOf{it.latitude};val e=route.maxOf{it.longitude};val w=route.minOf{it.longitude};map.post{map.zoomToBoundingBox(BoundingBox(n,e,s,w),true,72)}}};map.invalidate()})
     };DisposableEffect(Unit){onDispose{playing=false;mapRef?.onDetach()}}
+}
+
+@Composable private fun ObservationRunsCard(runs:List<MovementIntelligence.ObservationRun>,onRunSelected:(MovementIntelligence.ObservationRun)->Unit){
+    val top=runs.take(6)
+    if(top.isEmpty()) return
+    Card(Modifier.fillMaxWidth().padding(horizontal=8.dp,vertical=4.dp)){
+        Column(Modifier.padding(10.dp),verticalArrangement=Arrangement.spacedBy(6.dp)){
+            Text("Consecutive Tower Observation Runs",style=MaterialTheme.typography.titleSmall)
+            top.forEach{r->
+                Surface(Modifier.fillMaxWidth().clickable{onRunSelected(r)},tonalElevation=1.dp,shape=MaterialTheme.shapes.small){
+                    Column(Modifier.padding(8.dp),verticalArrangement=Arrangement.spacedBy(2.dp)){
+                        Text(r.tower,style=MaterialTheme.typography.bodyMedium)
+                        Text("${r.records} consecutive record(s) • observed span ${formatMinutes(r.spanMinutes)}",style=MaterialTheme.typography.bodySmall)
+                        Text("First: ${r.firstSeen} • Last: ${r.lastSeen}",style=MaterialTheme.typography.labelSmall)
+                    }
+                }
+            }
+            Text("Tap a run to highlight only those consecutive mapped observations. The observed span is not proof that the handset continuously remained at that tower location.",style=MaterialTheme.typography.labelSmall)
+        }
+    }
 }
 
 @Composable private fun TransitionPatternsCard(patterns:List<MovementIntelligence.TransitionPattern>,onPatternSelected:(MovementIntelligence.TransitionPattern)->Unit){
