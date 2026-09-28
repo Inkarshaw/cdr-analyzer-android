@@ -63,6 +63,16 @@ object MovementIntelligence {
         val strongestTo: String?,
         val strongestCount: Int
     )
+    data class UnusualTowerReview(
+        val tower: String,
+        val observations: Int,
+        val firstSeen: String,
+        val lastSeen: String,
+        val observedSpanMinutes: Long,
+        val connectedTowers: Int,
+        val reasons: List<String>,
+        val reviewScore: Int
+    )
     data class Metrics(
         val mappedObservations: Int,
         val uniqueTowers: Int,
@@ -91,7 +101,8 @@ object MovementIntelligence {
         val graphNodes: List<TowerGraphNode> = emptyList(),
         val graphEdges: List<TowerGraphEdge> = emptyList(),
         val clusters: List<TowerCluster> = emptyList(),
-        val isolatedTowers: List<String> = emptyList()
+        val isolatedTowers: List<String> = emptyList(),
+        val unusualTowers: List<UnusualTowerReview> = emptyList()
     )
 
     fun build(points: List<GeoPoint>, thresholds: Thresholds = Thresholds()): Summary {
@@ -176,7 +187,28 @@ object MovementIntelligence {
         }
         val clustered=clusterList.flatMap{it.towers}.toSet();val isolatedTowers=visits.map{it.tower}.filter{it !in clustered}
         val clusters=clusterList.sortedWith(compareByDescending<TowerCluster>{it.totalObservations}.thenByDescending{it.totalTransitions})
-        return Summary(visits,transitions,visits.count{it.records>1},distinctAnomalies,metrics,timePeriods,dayNight,hourly,weekdays,daily,transitionPatterns,sortedRuns,overnightObservations,recurringOvernightTowers,reviewSummary,graphNodes,graphEdges,clusters,isolatedTowers)
+        val nodeByTower=graphNodes.associateBy{it.tower}
+        val unusualTowers=visits.mapNotNull{visit->
+            val node=nodeByTower[visit.tower]
+            val reasons=mutableListOf<String>()
+            if(visit.records==1) reasons+="Single mapped observation"
+            else if(visit.records<=2) reasons+="Rarely observed (${visit.records} records)"
+            if(visit.tower in isolatedTowers) reasons+="Outside repeated-link clusters"
+            if((node?.connectedTowers?:0)<=1) reasons+="Low tower-network connectivity"
+            if(visit.observedSpanMinutes<=60) reasons+="Short observed time span"
+            val score=reasons.size
+            if(score<2||visit.records>3) null else UnusualTowerReview(
+                tower=visit.tower,
+                observations=visit.records,
+                firstSeen=visit.firstSeen,
+                lastSeen=visit.lastSeen,
+                observedSpanMinutes=visit.observedSpanMinutes,
+                connectedTowers=node?.connectedTowers?:0,
+                reasons=reasons,
+                reviewScore=score
+            )
+        }.sortedWith(compareByDescending<UnusualTowerReview>{it.reviewScore}.thenBy{it.observations}.thenBy{it.tower})
+        return Summary(visits,transitions,visits.count{it.records>1},distinctAnomalies,metrics,timePeriods,dayNight,hourly,weekdays,daily,transitionPatterns,sortedRuns,overnightObservations,recurringOvernightTowers,reviewSummary,graphNodes,graphEdges,clusters,isolatedTowers,unusualTowers)
     }
 
     private fun overnightKey(epochMillis:Long):String? { val cal=Calendar.getInstance().apply{timeInMillis=epochMillis};val hour=cal.get(Calendar.HOUR_OF_DAY);if(hour in 6..21)return null;if(hour<=5)cal.add(Calendar.DAY_OF_MONTH,-1);return SimpleDateFormat("yyyy-MM-dd",Locale.US).format(cal.time) }
