@@ -73,6 +73,16 @@ object MovementIntelligence {
         val reasons: List<String>,
         val reviewScore: Int
     )
+    data class HeatTower(
+        val tower: String,
+        val observations: Int,
+        val latitude: Double,
+        val longitude: Double,
+        val sharePercent: Double,
+        val relativeIntensity: Double,
+        val dayObservations: Int,
+        val nightObservations: Int
+    )
     data class Metrics(
         val mappedObservations: Int,
         val uniqueTowers: Int,
@@ -102,7 +112,8 @@ object MovementIntelligence {
         val graphEdges: List<TowerGraphEdge> = emptyList(),
         val clusters: List<TowerCluster> = emptyList(),
         val isolatedTowers: List<String> = emptyList(),
-        val unusualTowers: List<UnusualTowerReview> = emptyList()
+        val unusualTowers: List<UnusualTowerReview> = emptyList(),
+        val heatTowers: List<HeatTower> = emptyList()
     )
 
     fun build(points: List<GeoPoint>, thresholds: Thresholds = Thresholds()): Summary {
@@ -208,7 +219,25 @@ object MovementIntelligence {
                 reviewScore=score
             )
         }.sortedWith(compareByDescending<UnusualTowerReview>{it.reviewScore}.thenBy{it.observations}.thenBy{it.tower})
-        return Summary(visits,transitions,visits.count{it.records>1},distinctAnomalies,metrics,timePeriods,dayNight,hourly,weekdays,daily,transitionPatterns,sortedRuns,overnightObservations,recurringOvernightTowers,reviewSummary,graphNodes,graphEdges,clusters,isolatedTowers,unusualTowers)
+        val maxTowerObservations=(visits.maxOfOrNull{it.records}?:1).coerceAtLeast(1)
+        val totalMapped=timed.size.coerceAtLeast(1)
+        val heatTowers=timed.groupBy{it.third}.map{(tower,rows)->
+            val observations=rows.size
+            val dayCount=rows.count{dayNightPeriod(it.second)=="Day"}
+            val avgLat=rows.map{it.first.latitude}.average()
+            val avgLon=rows.map{it.first.longitude}.average()
+            HeatTower(
+                tower=tower,
+                observations=observations,
+                latitude=avgLat,
+                longitude=avgLon,
+                sharePercent=(observations.toDouble()/totalMapped.toDouble())*100.0,
+                relativeIntensity=observations.toDouble()/maxTowerObservations.toDouble(),
+                dayObservations=dayCount,
+                nightObservations=observations-dayCount
+            )
+        }.sortedWith(compareByDescending<HeatTower>{it.observations}.thenBy{it.tower})
+        return Summary(visits,transitions,visits.count{it.records>1},distinctAnomalies,metrics,timePeriods,dayNight,hourly,weekdays,daily,transitionPatterns,sortedRuns,overnightObservations,recurringOvernightTowers,reviewSummary,graphNodes,graphEdges,clusters,isolatedTowers,unusualTowers,heatTowers)
     }
 
     private fun overnightKey(epochMillis:Long):String? { val cal=Calendar.getInstance().apply{timeInMillis=epochMillis};val hour=cal.get(Calendar.HOUR_OF_DAY);if(hour in 6..21)return null;if(hour<=5)cal.add(Calendar.DAY_OF_MONTH,-1);return SimpleDateFormat("yyyy-MM-dd",Locale.US).format(cal.time) }
