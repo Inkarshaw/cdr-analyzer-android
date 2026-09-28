@@ -20,6 +20,49 @@ object MovementIntelligence {
     data class ObservationRun(val tower: String, val records: Int, val firstSeen: String, val lastSeen: String, val spanMinutes: Long)
     data class OvernightObservation(val nightDate: String, val tower: String, val records: Int, val firstSeen: String, val lastSeen: String, val spanMinutes: Long)
     data class RecurringOvernightTower(val tower: String, val nights: Int, val totalRecords: Int, val firstNight: String, val lastNight: String)
+    data class ReviewSummary(
+        val observations: Int,
+        val uniqueTowers: Int,
+        val transitions: Int,
+        val repeatedTowers: Int,
+        val observationRuns: Int,
+        val overnightCandidates: Int,
+        val recurringOvernightTowers: Int,
+        val rapidFlags: Int,
+        val longGapFlags: Int,
+        val returnFlags: Int,
+        val topTower: String?,
+        val topTowerRecords: Int,
+        val topRouteFrom: String?,
+        val topRouteTo: String?,
+        val topRouteCount: Int
+    )
+    data class TowerGraphNode(
+        val tower: String,
+        val observations: Int,
+        val firstSeen: String,
+        val lastSeen: String,
+        val incomingTransitions: Int,
+        val outgoingTransitions: Int,
+        val connectedTowers: Int
+    )
+    data class TowerGraphEdge(
+        val fromTower: String,
+        val toTower: String,
+        val count: Int,
+        val averageGapMinutes: Double,
+        val averageDistanceKm: Double
+    )
+    data class TowerCluster(
+        val id: Int,
+        val towers: List<String>,
+        val totalObservations: Int,
+        val totalTransitions: Int,
+        val dominantTower: String?,
+        val strongestFrom: String?,
+        val strongestTo: String?,
+        val strongestCount: Int
+    )
     data class Metrics(
         val mappedObservations: Int,
         val uniqueTowers: Int,
@@ -29,7 +72,27 @@ object MovementIntelligence {
         val mostObservedTower: String?,
         val mostObservedTowerRecords: Int
     )
-    data class Summary(val visits: List<TowerVisit>, val transitions: List<Transition>, val repeatedTowers: Int, val anomalies: List<MovementAnomaly> = emptyList(), val metrics: Metrics = Metrics(0,0,0,0.0,0,null,0), val timePeriods: List<TimePeriodSummary> = emptyList(), val dayNight: List<DayNightSummary> = emptyList(), val hourly: List<HourlySummary> = emptyList(), val weekdays: List<WeekdaySummary> = emptyList(), val daily: List<DailySummary> = emptyList(), val transitionPatterns: List<TransitionPattern> = emptyList(), val observationRuns: List<ObservationRun> = emptyList(), val overnightObservations: List<OvernightObservation> = emptyList(), val recurringOvernightTowers: List<RecurringOvernightTower> = emptyList())
+    data class Summary(
+        val visits: List<TowerVisit>,
+        val transitions: List<Transition>,
+        val repeatedTowers: Int,
+        val anomalies: List<MovementAnomaly> = emptyList(),
+        val metrics: Metrics = Metrics(0,0,0,0.0,0,null,0),
+        val timePeriods: List<TimePeriodSummary> = emptyList(),
+        val dayNight: List<DayNightSummary> = emptyList(),
+        val hourly: List<HourlySummary> = emptyList(),
+        val weekdays: List<WeekdaySummary> = emptyList(),
+        val daily: List<DailySummary> = emptyList(),
+        val transitionPatterns: List<TransitionPattern> = emptyList(),
+        val observationRuns: List<ObservationRun> = emptyList(),
+        val overnightObservations: List<OvernightObservation> = emptyList(),
+        val recurringOvernightTowers: List<RecurringOvernightTower> = emptyList(),
+        val reviewSummary: ReviewSummary = ReviewSummary(0,0,0,0,0,0,0,0,0,0,null,0,null,null,0),
+        val graphNodes: List<TowerGraphNode> = emptyList(),
+        val graphEdges: List<TowerGraphEdge> = emptyList(),
+        val clusters: List<TowerCluster> = emptyList(),
+        val isolatedTowers: List<String> = emptyList()
+    )
 
     fun build(points: List<GeoPoint>, thresholds: Thresholds = Thresholds()): Summary {
         val rapidDistance = thresholds.rapidDistanceKm.coerceAtLeast(0.1); val rapidWindow = thresholds.rapidWindowMinutes.coerceAtLeast(1); val longGap = thresholds.longGapMinutes.coerceAtLeast(1); val returnWindow = thresholds.returnWindowMinutes.coerceAtLeast(1)
@@ -51,7 +114,41 @@ object MovementIntelligence {
         val observationRuns=mutableListOf<ObservationRun>();if(timed.isNotEmpty()){var start=0;for(i in 1..timed.size){if(i==timed.size||timed[i].third!=timed[start].third){val first=timed[start];val last=timed[i-1];val count=i-start;val span=((last.second-first.second)/60000L).coerceAtLeast(0);observationRuns+=ObservationRun(first.third,count,first.first.at,last.first.at,span);start=i}}};val sortedRuns=observationRuns.filter{it.records>1}.sortedWith(compareByDescending<ObservationRun>{it.spanMinutes}.thenByDescending{it.records})
         val overnightObservations=timed.mapNotNull{row->overnightKey(row.second)?.let{key->key to row}}.groupBy({it.first to it.second.third},{it.second}).mapNotNull{(key,rows)->val sorted=rows.sortedBy{it.second};val hasLate=sorted.any{hourOfDay(it.second)>=22};val hasEarly=sorted.any{hourOfDay(it.second)<=5};if(!hasLate||!hasEarly)return@mapNotNull null;val first=sorted.first();val last=sorted.last();OvernightObservation(key.first,key.second,sorted.size,first.first.at,last.first.at,((last.second-first.second)/60000L).coerceAtLeast(0))}.sortedWith(compareByDescending<OvernightObservation>{it.spanMinutes}.thenByDescending{it.records})
         val recurringOvernightTowers=overnightObservations.groupBy{it.tower}.map{(tower,rows)->val nights=rows.map{it.nightDate}.distinct().sorted();RecurringOvernightTower(tower,nights.size,rows.sumOf{it.records},nights.first(),nights.last())}.filter{it.nights>1}.sortedWith(compareByDescending<RecurringOvernightTower>{it.nights}.thenByDescending{it.totalRecords})
-        return Summary(visits,transitions,visits.count{it.records>1},anomalies.distinctBy{"${it.type}|${it.at}|${it.towers.joinToString()}"},metrics,timePeriods,dayNight,hourly,weekdays,daily,transitionPatterns,sortedRuns,overnightObservations,recurringOvernightTowers)
+        val distinctAnomalies=anomalies.distinctBy{"${it.type}|${it.at}|${it.towers.joinToString()}"}
+        val topRoute=transitionPatterns.firstOrNull()
+        val reviewSummary=ReviewSummary(
+            observations=metrics.mappedObservations,
+            uniqueTowers=metrics.uniqueTowers,
+            transitions=transitions.size,
+            repeatedTowers=visits.count{it.records>1},
+            observationRuns=sortedRuns.size,
+            overnightCandidates=overnightObservations.size,
+            recurringOvernightTowers=recurringOvernightTowers.size,
+            rapidFlags=distinctAnomalies.count{it.type==AnomalyType.RAPID_CHANGE},
+            longGapFlags=distinctAnomalies.count{it.type==AnomalyType.LONG_GAP},
+            returnFlags=distinctAnomalies.count{it.type==AnomalyType.RETURN_PATTERN},
+            topTower=top?.tower,
+            topTowerRecords=top?.records?:0,
+            topRouteFrom=topRoute?.fromTower,
+            topRouteTo=topRoute?.toTower,
+            topRouteCount=topRoute?.count?:0
+        )
+        val graphEdges=transitionPatterns.map{TowerGraphEdge(it.fromTower,it.toTower,it.count,it.averageGapMinutes,it.averageDistanceKm)}
+        val graphNodes=visits.map{visit->
+            val incoming=graphEdges.filter{it.toTower==visit.tower}.sumOf{it.count}
+            val outgoing=graphEdges.filter{it.fromTower==visit.tower}.sumOf{it.count}
+            val connected=(graphEdges.filter{it.fromTower==visit.tower}.map{it.toTower}+graphEdges.filter{it.toTower==visit.tower}.map{it.fromTower}).distinct().size
+            TowerGraphNode(visit.tower,visit.records,visit.firstSeen,visit.lastSeen,incoming,outgoing,connected)
+        }.sortedWith(compareByDescending<TowerGraphNode>{it.connectedTowers}.thenByDescending{it.observations})
+        val repeatedEdges=graphEdges.filter{it.count>1}
+        val adjacency=mutableMapOf<String,MutableSet<String>>()
+        repeatedEdges.forEach{edge->adjacency.getOrPut(edge.fromTower){mutableSetOf()}.add(edge.toTower);adjacency.getOrPut(edge.toTower){mutableSetOf()}.add(edge.fromTower)}
+        val visited=mutableSetOf<String>();val clusterList=mutableListOf<TowerCluster>();var clusterId=1
+        for(tower in adjacency.keys.sorted()){if(tower in visited)continue;val stack=java.util.ArrayDeque<String>();val members=mutableListOf<String>();stack.add(tower);visited.add(tower);while(stack.isNotEmpty()){val current=stack.removeLast();members+=current;adjacency[current].orEmpty().forEach{next->if(visited.add(next))stack.add(next)}};if(members.size>1){val memberSet=members.toSet();val internalEdges=graphEdges.filter{it.fromTower in memberSet&&it.toTower in memberSet};val dominant=visits.filter{it.tower in memberSet}.maxByOrNull{it.records};val strongest=internalEdges.maxByOrNull{it.count};clusterList+=TowerCluster(clusterId++,members.sorted(),visits.filter{it.tower in memberSet}.sumOf{it.records},internalEdges.sumOf{it.count},dominant?.tower,strongest?.fromTower,strongest?.toTower,strongest?.count?:0)}}
+        }
+        val clustered=clusterList.flatMap{it.towers}.toSet();val isolatedTowers=visits.map{it.tower}.filter{it !in clustered}
+        val clusters=clusterList.sortedWith(compareByDescending<TowerCluster>{it.totalObservations}.thenByDescending{it.totalTransitions})
+        return Summary(visits,transitions,visits.count{it.records>1},distinctAnomalies,metrics,timePeriods,dayNight,hourly,weekdays,daily,transitionPatterns,sortedRuns,overnightObservations,recurringOvernightTowers,reviewSummary,graphNodes,graphEdges,clusters,isolatedTowers)
     }
 
     private fun overnightKey(epochMillis:Long):String? { val cal=Calendar.getInstance().apply{timeInMillis=epochMillis};val hour=cal.get(Calendar.HOUR_OF_DAY);if(hour in 6..21)return null;if(hour<=5)cal.add(Calendar.DAY_OF_MONTH,-1);return SimpleDateFormat("yyyy-MM-dd",Locale.US).format(cal.time) }
