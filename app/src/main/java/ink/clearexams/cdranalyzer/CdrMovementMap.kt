@@ -83,12 +83,14 @@ fun CdrMovementMap(points: List<GeoPoint>, modifier: Modifier = Modifier) {
     var fromText by remember(points){mutableStateOf("")}; var toText by remember(points){mutableStateOf("")}; var playing by remember(points){mutableStateOf(false)}; var showVisits by remember{mutableStateOf(false)}; var showTransitions by remember{mutableStateOf(false)}; var showAnomalies by remember{mutableStateOf(false)}; var mapFocus by remember{mutableStateOf<MapFocus?>(null)}; var mapRef by remember{mutableStateOf<MapView?>(null)}
     var showRapidFlags by remember{mutableStateOf(true)}; var showLongGapFlags by remember{mutableStateOf(true)}; var showReturnFlags by remember{mutableStateOf(true)}
     var heatMapEnabled by remember{mutableStateOf(false)}
+    var playbackSpeed by remember{mutableDoubleStateOf(1.0)}
+    var playbackTrailPoints by remember{mutableIntStateOf(15)}
     var thresholds by remember { mutableStateOf(MovementIntelligence.Thresholds(prefs.getFloat("rapidDistanceKm",defaults.rapidDistanceKm.toFloat()).toDouble(),prefs.getLong("rapidWindowMinutes",defaults.rapidWindowMinutes),prefs.getLong("longGapMinutes",defaults.longGapMinutes),prefs.getLong("returnWindowMinutes",defaults.returnWindowMinutes))) }
     fun updateThresholds(v:MovementIntelligence.Thresholds){thresholds=v;playing=false;mapFocus=null;prefs.edit().putFloat("rapidDistanceKm",v.rapidDistanceKm.toFloat()).putLong("rapidWindowMinutes",v.rapidWindowMinutes).putLong("longGapMinutes",v.longGapMinutes).putLong("returnWindowMinutes",v.returnWindowMinutes).apply()}
     fun parse(v:String):Long?{if(v.isBlank())return null;for(p in listOf("dd-MM-yyyy HH:mm","dd/MM/yyyy HH:mm","yyyy-MM-dd HH:mm","dd-MM-yyyy HH:mm:ss","dd/MM/yyyy HH:mm:ss","yyyy-MM-dd HH:mm:ss")){val x=runCatching{SimpleDateFormat(p,Locale.US).apply{isLenient=false}.parse(v.trim())?.time}.getOrNull();if(x!=null)return x};return null}
     val fm=parse(fromText);val tm=parse(toText);val valid=(fromText.isBlank()||fm!=null)&&(toText.isBlank()||tm!=null)&&(fm==null||tm==null||fm<=tm);val filtered=remember(points,fromText,toText){if(!valid)points else points.filter{p->val t=parse(p.at);t!=null&&(fm==null||t>=fm)&&(tm==null||t<=tm)}};val active=if(valid)filtered else points;val intel=remember(active,thresholds){MovementIntelligence.build(active,thresholds)};var step by remember(filtered){mutableIntStateOf((filtered.size-1).coerceAtLeast(0))}
     val rapidFlagCount=intel.anomalies.count{it.type==MovementIntelligence.AnomalyType.RAPID_CHANGE};val longGapFlagCount=intel.anomalies.count{it.type==MovementIntelligence.AnomalyType.LONG_GAP};val returnFlagCount=intel.anomalies.count{it.type==MovementIntelligence.AnomalyType.RETURN_PATTERN};val visibleAnomalies=intel.anomalies.filter{when(it.type){MovementIntelligence.AnomalyType.RAPID_CHANGE->showRapidFlags;MovementIntelligence.AnomalyType.LONG_GAP->showLongGapFlags;MovementIntelligence.AnomalyType.RETURN_PATTERN->showReturnFlags}}
-    LaunchedEffect(playing,filtered){if(!playing||filtered.isEmpty())return@LaunchedEffect;if(step>=filtered.lastIndex)step=0;while(playing&&step<filtered.lastIndex){delay(900);step++};playing=false}
+    LaunchedEffect(playing,filtered,playbackSpeed){if(!playing||filtered.isEmpty())return@LaunchedEffect;if(step>=filtered.lastIndex)step=0;val frameDelay=(900.0/playbackSpeed.coerceAtLeast(0.25)).toLong().coerceAtLeast(120L);while(playing&&step<filtered.lastIndex){delay(frameDelay);step++};playing=false}
     if(showVisits)TowerVisitsDialog(intel.visits,active,{playing=false;mapFocus=it;showVisits=false}){showVisits=false};if(showTransitions)MovementTransitionsDialog(intel.transitions,active,{playing=false;mapFocus=it;showTransitions=false}){showTransitions=false};if(showAnomalies)MovementAnomaliesDialog(visibleAnomalies,active,{playing=false;mapFocus=it;showAnomalies=false}){showAnomalies=false}
     Column(modifier.fillMaxWidth()){
         Card(Modifier.fillMaxWidth().padding(horizontal=8.dp,vertical=4.dp)){Column(Modifier.padding(10.dp),verticalArrangement=Arrangement.spacedBy(6.dp)){Text("Movement period",style=MaterialTheme.typography.titleSmall);OutlinedTextField(fromText,{playing=false;mapFocus=null;fromText=it},label={Text("From: DD-MM-YYYY HH:MM")},singleLine=true,modifier=Modifier.fillMaxWidth());OutlinedTextField(toText,{playing=false;mapFocus=null;toText=it},label={Text("To: DD-MM-YYYY HH:MM")},singleLine=true,modifier=Modifier.fillMaxWidth());if(!valid)Text("Invalid date/time range.",color=MaterialTheme.colorScheme.error,style=MaterialTheme.typography.bodySmall)else if(fromText.isNotBlank()||toText.isNotBlank()){Text("${filtered.size} of ${points.size} mapped records in selected period",style=MaterialTheme.typography.bodySmall);OutlinedButton({playing=false;mapFocus=null;fromText="";toText=""},Modifier.fillMaxWidth()){Text("Reset movement period")}}else Text("All ${points.size} mapped records",style=MaterialTheme.typography.bodySmall)}}
@@ -203,8 +205,29 @@ fun CdrMovementMap(points: List<GeoPoint>, modifier: Modifier = Modifier) {
         MovementFlagFilters(rapidFlagCount,longGapFlagCount,returnFlagCount,showRapidFlags,showLongGapFlags,showReturnFlags,{showRapidFlags=it;showAnomalies=false;mapFocus=null},{showLongGapFlags=it;showAnomalies=false;mapFocus=null},{showReturnFlags=it;showAnomalies=false;mapFocus=null})
         Card(Modifier.fillMaxWidth().padding(horizontal=8.dp,vertical=4.dp)){Column(Modifier.padding(10.dp),verticalArrangement=Arrangement.spacedBy(6.dp)){Text("Movement Intelligence",style=MaterialTheme.typography.titleSmall);Text("${intel.visits.size} towers • ${intel.repeatedTowers} repeated • ${intel.transitions.size} transitions • ${visibleAnomalies.size} visible / ${intel.anomalies.size} total flags",style=MaterialTheme.typography.bodySmall);intel.visits.firstOrNull()?.let{top->Text("Most observed: ${top.tower} • ${top.records} record(s) • first ${top.firstSeen} • last ${top.lastSeen}",style=MaterialTheme.typography.bodySmall)};Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(6.dp)){OutlinedButton({showVisits=true},Modifier.weight(1f),enabled=intel.visits.isNotEmpty()){Text("Visits")};OutlinedButton({showTransitions=true},Modifier.weight(1f),enabled=intel.transitions.isNotEmpty()){Text("Transitions")};OutlinedButton({showAnomalies=true},Modifier.weight(1f),enabled=visibleAnomalies.isNotEmpty()){Text("Flags (${visibleAnomalies.size})")}};if(visibleAnomalies.isEmpty()&&intel.anomalies.isNotEmpty())Text("No review flag types are currently selected.",style=MaterialTheme.typography.bodySmall);Text("Flags identify patterns for review only. Tower observations do not establish the handset's exact position or continuous travel.",style=MaterialTheme.typography.labelSmall)}}
         mapFocus?.let{f->Card(Modifier.fillMaxWidth().padding(horizontal=8.dp,vertical=4.dp)){Row(Modifier.fillMaxWidth().padding(10.dp),horizontalArrangement=Arrangement.SpaceBetween){Column(Modifier.weight(1f)){Text("Map focus",style=MaterialTheme.typography.titleSmall);Text("${f.label} • ${f.points.size} highlighted observation(s)",style=MaterialTheme.typography.bodySmall)};TextButton({mapFocus=null}){Text("Clear")}}}}
-        val safe=step.coerceIn(0,(active.size-1).coerceAtLeast(0));Row(Modifier.fillMaxWidth().padding(horizontal=8.dp,vertical=4.dp),horizontalArrangement=Arrangement.spacedBy(8.dp)){Button({mapFocus=null;if(safe>=active.lastIndex)step=0;playing=!playing},enabled=valid&&active.isNotEmpty(),modifier=Modifier.weight(1f)){Text(if(playing)"Pause" else "Play movement")};OutlinedButton({playing=false;mapFocus=null;step=0},enabled=active.isNotEmpty(),modifier=Modifier.weight(1f)){Text("First point")};OutlinedButton({playing=false;mapFocus=null;step=active.lastIndex},enabled=active.isNotEmpty(),modifier=Modifier.weight(1f)){Text("All points")}}
-        if(active.isNotEmpty())Text(if(mapFocus!=null)"Showing selected movement evidence on map" else if(heatMapEnabled)"Heat map: ${intel.heatTowers.size} tower(s) ranked by mapped observation density" else if(playing||safe<active.lastIndex)"Playback: ${safe+1} / ${active.size} • ${active[safe].at.ifBlank{"Time unavailable"}}" else "Showing all ${active.size} mapped records",style=MaterialTheme.typography.bodySmall,modifier=Modifier.padding(horizontal=12.dp,vertical=2.dp))
+        val safe=step.coerceIn(0,(active.size-1).coerceAtLeast(0))
+        MovementPlaybackV2Card(
+            points=active,
+            step=safe,
+            playing=playing,
+            speedMultiplier=playbackSpeed,
+            trailPoints=playbackTrailPoints,
+            onStepChange={newStep->
+                playing=false
+                heatMapEnabled=false
+                mapFocus=null
+                step=newStep.coerceIn(0,active.lastIndex.coerceAtLeast(0))
+            },
+            onPlayingChange={shouldPlay->
+                heatMapEnabled=false
+                mapFocus=null
+                if(shouldPlay&&safe>=active.lastIndex)step=0
+                playing=shouldPlay
+            },
+            onSpeedChange={speed->playbackSpeed=speed},
+            onTrailChange={trail->playbackTrailPoints=trail}
+        )
+        if(active.isNotEmpty())Text(if(mapFocus!=null)"Showing selected movement evidence on map" else if(heatMapEnabled)"Heat map: ${intel.heatTowers.size} tower(s) ranked by mapped observation density" else "Playback ${safe+1} / ${active.size} • ${playbackSpeed}× • trail ${if(playbackTrailPoints==0)"All" else playbackTrailPoints.toString()} • ${active[safe].at.ifBlank{"Time unavailable"}}",style=MaterialTheme.typography.bodySmall,modifier=Modifier.padding(horizontal=12.dp,vertical=2.dp))
         AndroidView(
             modifier=Modifier.fillMaxWidth().height(360.dp),
             factory={ctx->
@@ -259,7 +282,8 @@ fun CdrMovementMap(points: List<GeoPoint>, modifier: Modifier = Modifier) {
                     map.invalidate()
                     return@AndroidView
                 }
-                val visible=if(focus!=null)focus.points else if(safe>=active.lastIndex)active else active.take(safe+1)
+                val playbackVisible=if(safe>=active.lastIndex)active else active.take(safe+1)
+                val visible=if(focus!=null)focus.points else if(playbackTrailPoints==0||safe>=active.lastIndex)playbackVisible else playbackVisible.takeLast(playbackTrailPoints.coerceAtLeast(1))
                 val route=visible.map{OsmGeoPoint(it.latitude,it.longitude)}
                 if(route.size>1)map.overlays.add(Polyline().apply{setPoints(route);outlinePaint.strokeWidth=if(focus!=null)11f else 7f})
                 visible.forEachIndexed{i,p->
@@ -268,7 +292,7 @@ fun CdrMovementMap(points: List<GeoPoint>, modifier: Modifier = Modifier) {
                         setAnchor(Marker.ANCHOR_CENTER,Marker.ANCHOR_BOTTOM)
                         title=if(focus!=null)"Selected • ${p.tower.ifBlank{"Mapped CDR point"}}" else p.tower.ifBlank{"Mapped CDR point"}
                         snippet=p.at.ifBlank{"Time unavailable"}
-                        subDescription=if(focus!=null)"Highlighted movement observation" else if(i==0)"First mapped record" else if(i==visible.lastIndex&&visible.size<active.size)"Current playback point" else if(i==visible.lastIndex)"Last mapped record" else "CDR mapped record"
+                        subDescription=if(focus!=null)"Highlighted movement observation" else if(i==visible.lastIndex&&safe<active.lastIndex)"Current playback point" else if(i==visible.lastIndex)"Last mapped record" else "Playback trail observation"
                     })
                 }
                 route.lastOrNull()?.let{center->
