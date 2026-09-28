@@ -91,6 +91,48 @@ fun CdrMovementMap(points: List<GeoPoint>, modifier: Modifier = Modifier) {
         Card(Modifier.fillMaxWidth().padding(horizontal=8.dp,vertical=4.dp)){Column(Modifier.padding(10.dp),verticalArrangement=Arrangement.spacedBy(6.dp)){Text("Movement period",style=MaterialTheme.typography.titleSmall);OutlinedTextField(fromText,{playing=false;mapFocus=null;fromText=it},label={Text("From: DD-MM-YYYY HH:MM")},singleLine=true,modifier=Modifier.fillMaxWidth());OutlinedTextField(toText,{playing=false;mapFocus=null;toText=it},label={Text("To: DD-MM-YYYY HH:MM")},singleLine=true,modifier=Modifier.fillMaxWidth());if(!valid)Text("Invalid date/time range.",color=MaterialTheme.colorScheme.error,style=MaterialTheme.typography.bodySmall)else if(fromText.isNotBlank()||toText.isNotBlank()){Text("${filtered.size} of ${points.size} mapped records in selected period",style=MaterialTheme.typography.bodySmall);OutlinedButton({playing=false;mapFocus=null;fromText="";toText=""},Modifier.fillMaxWidth()){Text("Reset movement period")}}else Text("All ${points.size} mapped records",style=MaterialTheme.typography.bodySmall)}}
         if(valid&&filtered.isEmpty()){Text("No mapped movement points are available in the selected period.",modifier=Modifier.padding(12.dp));return@Column}
         MovementSummaryCard(intel.metrics)
+        MovementReviewSummaryCard(
+            summary=intel.reviewSummary,
+            onTopTower={tower->
+                val observations=active.filter{movementTowerKey(it)==tower}
+                if(observations.isNotEmpty()){playing=false;mapFocus=MapFocus(observations,"Top tower • $tower")}
+            },
+            onTopRoute={from,to->
+                val observations=active.filter{val tower=movementTowerKey(it);tower==from||tower==to}
+                if(observations.isNotEmpty()){playing=false;mapFocus=MapFocus(observations,"Top route • $from → $to")}
+            },
+            onFlags={showAnomalies=true},
+            onOvernight={
+                val qualifying=intel.overnightObservations.map{it.nightDate to it.tower}.toSet()
+                val observations=active.filter{p->val night=movementOvernightKey(p.at);night!=null&&(night to movementTowerKey(p)) in qualifying}
+                if(observations.isNotEmpty()){playing=false;mapFocus=MapFocus(observations,"All overnight review candidates")}
+            }
+        )
+        TowerRelationshipGraphCard(
+            nodes=intel.graphNodes,
+            edges=intel.graphEdges,
+            onTowerSelected={tower->
+                val observations=active.filter{movementTowerKey(it)==tower}
+                if(observations.isNotEmpty()){playing=false;mapFocus=MapFocus(observations,"Network tower • $tower")}
+            },
+            onEdgeSelected={edge->
+                val observations=active.filter{val tower=movementTowerKey(it);tower==edge.fromTower||tower==edge.toTower}
+                if(observations.isNotEmpty()){playing=false;mapFocus=MapFocus(observations,"Network link • ${edge.fromTower} → ${edge.toTower}")}
+            }
+        )
+        TowerClusterAnalysisCard(
+            clusters=intel.clusters,
+            isolatedTowers=intel.isolatedTowers,
+            onClusterSelected={cluster->
+                val towers=cluster.towers.toSet()
+                val observations=active.filter{movementTowerKey(it) in towers}
+                if(observations.isNotEmpty()){playing=false;mapFocus=MapFocus(observations,"Tower Cluster ${cluster.id}")}
+            },
+            onIsolatedTowerSelected={tower->
+                val observations=active.filter{movementTowerKey(it)==tower}
+                if(observations.isNotEmpty()){playing=false;mapFocus=MapFocus(observations,"Tower outside repeated-link clusters • $tower")}
+            }
+        )
         TimeOfDayMovementCard(intel.timePeriods){label->
             val observations=active.filter{movementHour(it.at)?.let{h->movementTimePeriod(h)==label}==true}
             if(observations.isNotEmpty()){playing=false;mapFocus=MapFocus(observations,label)}
