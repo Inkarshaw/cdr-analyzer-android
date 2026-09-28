@@ -133,6 +133,13 @@ fun CdrMovementMap(points: List<GeoPoint>, modifier: Modifier = Modifier) {
                 if(observations.isNotEmpty()){playing=false;mapFocus=MapFocus(observations,"Tower outside repeated-link clusters • $tower")}
             }
         )
+        UnusualTowerReviewCard(intel.unusualTowers){item->
+            val observations=active.filter{movementTowerKey(it)==item.tower}
+            if(observations.isNotEmpty()){
+                playing=false
+                mapFocus=MapFocus(observations,"Unusual tower review • ${item.tower}")
+            }
+        }
         TimeOfDayMovementCard(intel.timePeriods){label->
             val observations=active.filter{movementHour(it.at)?.let{h->movementTimePeriod(h)==label}==true}
             if(observations.isNotEmpty()){playing=false;mapFocus=MapFocus(observations,label)}
