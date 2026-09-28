@@ -143,8 +143,36 @@ object MovementIntelligence {
         val repeatedEdges=graphEdges.filter{it.count>1}
         val adjacency=mutableMapOf<String,MutableSet<String>>()
         repeatedEdges.forEach{edge->adjacency.getOrPut(edge.fromTower){mutableSetOf()}.add(edge.toTower);adjacency.getOrPut(edge.toTower){mutableSetOf()}.add(edge.fromTower)}
-        val visited=mutableSetOf<String>();val clusterList=mutableListOf<TowerCluster>();var clusterId=1
-        for(tower in adjacency.keys.sorted()){if(tower in visited)continue;val stack=java.util.ArrayDeque<String>();val members=mutableListOf<String>();stack.add(tower);visited.add(tower);while(stack.isNotEmpty()){val current=stack.removeLast();members+=current;adjacency[current].orEmpty().forEach{next->if(visited.add(next))stack.add(next)}};if(members.size>1){val memberSet=members.toSet();val internalEdges=graphEdges.filter{it.fromTower in memberSet&&it.toTower in memberSet};val dominant=visits.filter{it.tower in memberSet}.maxByOrNull{it.records};val strongest=internalEdges.maxByOrNull{it.count};clusterList+=TowerCluster(clusterId++,members.sorted(),visits.filter{it.tower in memberSet}.sumOf{it.records},internalEdges.sumOf{it.count},dominant?.tower,strongest?.fromTower,strongest?.toTower,strongest?.count?:0)}}
+        val visited=mutableSetOf<String>()
+        val clusterList=mutableListOf<TowerCluster>()
+        var clusterId=1
+        for(tower in adjacency.keys.sorted()){
+            if(tower in visited) continue
+            val stack=java.util.ArrayDeque<String>()
+            val members=mutableListOf<String>()
+            stack.add(tower)
+            visited.add(tower)
+            while(stack.isNotEmpty()){
+                val current=stack.removeLast()
+                members+=current
+                adjacency[current].orEmpty().forEach{next->if(visited.add(next))stack.add(next)}
+            }
+            if(members.size>1){
+                val memberSet=members.toSet()
+                val internalEdges=graphEdges.filter{it.fromTower in memberSet&&it.toTower in memberSet}
+                val dominant=visits.filter{it.tower in memberSet}.maxByOrNull{it.records}
+                val strongest=internalEdges.maxByOrNull{it.count}
+                clusterList+=TowerCluster(
+                    clusterId++,
+                    members.sorted(),
+                    visits.filter{it.tower in memberSet}.sumOf{it.records},
+                    internalEdges.sumOf{it.count},
+                    dominant?.tower,
+                    strongest?.fromTower,
+                    strongest?.toTower,
+                    strongest?.count?:0
+                )
+            }
         }
         val clustered=clusterList.flatMap{it.towers}.toSet();val isolatedTowers=visits.map{it.tower}.filter{it !in clustered}
         val clusters=clusterList.sortedWith(compareByDescending<TowerCluster>{it.totalObservations}.thenByDescending{it.totalTransitions})
