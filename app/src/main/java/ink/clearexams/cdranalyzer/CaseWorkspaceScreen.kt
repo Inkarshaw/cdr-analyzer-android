@@ -29,6 +29,7 @@ fun CaseWorkspaceScreen(
     var showShared by remember { mutableStateOf(false) }
     var showTimeline by remember { mutableStateOf(false) }
     var showGraph by remember { mutableStateOf(false) }
+    var showCorrelation by remember { mutableStateOf(false) }
     var showIdentities by remember { mutableStateOf(false) }
     var fromText by remember { mutableStateOf("") }
     var toText by remember { mutableStateOf("") }
@@ -68,6 +69,7 @@ fun CaseWorkspaceScreen(
         if (showShared) SharedTowerDialog(store, analysisWorkspace) { showShared = false }
         if (showTimeline) InvestigationTimelineDialog(analysisWorkspace) { showTimeline = false }
         if (showGraph) RelationshipGraphDialog(analysisWorkspace) { showGraph = false }
+        if (showCorrelation) AdvancedCorrelationDashboardDialog(analysisWorkspace, store) { showCorrelation = false }
 
         LazyColumn(
             Modifier.fillMaxSize(),
@@ -126,6 +128,11 @@ fun CaseWorkspaceScreen(
                     }
                 }
                 item { Button({ showShared = true }, Modifier.fillMaxWidth(), enabled = filterValid) { Text("Shared Towers / Co-location") } }
+                item {
+                    Button({ showCorrelation = true }, Modifier.fillMaxWidth(), enabled = filterValid) {
+                        Text("Advanced Correlation Dashboard")
+                    }
+                }
             }
             if (workspace.datasets.isNotEmpty()) item {
                 Button(
