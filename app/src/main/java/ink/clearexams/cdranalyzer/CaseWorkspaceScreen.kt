@@ -30,6 +30,7 @@ fun CaseWorkspaceScreen(
     var showTimeline by remember { mutableStateOf(false) }
     var showGraph by remember { mutableStateOf(false) }
     var showCorrelation by remember { mutableStateOf(false) }
+    var showCaseReview by remember { mutableStateOf(false) }
     var showIdentities by remember { mutableStateOf(false) }
     var fromText by remember { mutableStateOf("") }
     var toText by remember { mutableStateOf("") }
@@ -70,6 +71,7 @@ fun CaseWorkspaceScreen(
         if (showTimeline) InvestigationTimelineDialog(analysisWorkspace) { showTimeline = false }
         if (showGraph) RelationshipGraphDialog(analysisWorkspace) { showGraph = false }
         if (showCorrelation) AdvancedCorrelationDashboardDialog(analysisWorkspace, store) { showCorrelation = false }
+        if (showCaseReview) CaseReviewDialog(analysisWorkspace) { showCaseReview = false }
 
         LazyColumn(
             Modifier.fillMaxSize(),
@@ -119,6 +121,9 @@ fun CaseWorkspaceScreen(
                     Button({ showTimeline = true }, Modifier.weight(1f), enabled = filterValid) { Text("Timeline") }
                     Button({ showGraph = true }, Modifier.weight(1f), enabled = filterValid) { Text("Relationship Graph") }
                 }
+            }
+            if (workspace.datasets.isNotEmpty()) item {
+                Button({ showCaseReview = true }, Modifier.fillMaxWidth(), enabled = filterValid) { Text("Case Review / Chronology / Flags") }
             }
             if (workspace.datasets.size >= 2) {
                 item {
