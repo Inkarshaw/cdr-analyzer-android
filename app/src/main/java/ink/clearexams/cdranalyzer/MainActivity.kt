@@ -133,10 +133,10 @@ class MainActivity : ComponentActivity() {
      Box(Modifier.fillMaxWidth().weight(1f).padding(top=6.dp)){
       when(tab){
        0->CdrDashboardScreen(filtered,tags){editNumber=it}
-       1->RecordList(filtered,tags){editNumber=it}
+       1->SiteRecordsScreen(filtered,tags){editNumber=it}
        2->ExcelViewScreen(rows)
        3->ContactList(filtered,tags){editNumber=it}
-       4->MultiNumberAnalysisScreen(filtered)
+       4->SiteLocationsScreen(filtered)
        5->DeviceIntelligenceScreen(filtered)
        6->SmsIntelligenceScreen(filtered)
        7->IncidentAnalysisScreen(filtered)
