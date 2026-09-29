@@ -10,7 +10,7 @@ object CdrPrintReport {
     fun print(context: Context, rows: List<CdrRecord>, summary: Summary) {
         val topContacts = rows.map { it.otherParty }.filter { it.isNotBlank() }.groupingBy { it }.eachCount().entries.sortedByDescending { it.value }.take(20)
         val topTowers = rows.filter { it.cellId.isNotBlank() }.groupingBy { listOf(it.lac,it.cellId).filter(String::isNotBlank).joinToString("/") }.eachCount().entries.sortedByDescending { it.value }.take(20)
-        fun esc(value: String) = value.replace("&","&amp;").replace("<","&lt;").replace(">","&gt;").replace(""","&quot;")
+        fun esc(value: String) = value.replace("&","&amp;").replace("<","&lt;").replace(">","&gt;").replace("\"","&quot;")
         val html = buildString {
             append("<html><head><meta charset=\"utf-8\"><style>body{font-family:sans-serif;padding:24px;color:#111}h1{font-size:22px}h2{margin-top:22px;font-size:16px}table{border-collapse:collapse;width:100%}td,th{border:1px solid #ccc;padding:6px;text-align:left;font-size:11px}.k{display:inline-block;margin:4px 12px 4px 0;font-weight:700}</style></head><body>")
             append("<h1>CDR Case Analyzer</h1>")
