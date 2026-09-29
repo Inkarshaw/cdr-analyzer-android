@@ -1,5 +1,6 @@
 package ink.clearexams.cdranalyzer
 
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
@@ -7,6 +8,8 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.unit.dp
 
 data class MultiContact(val number:String,val subjects:List<String>,val records:Int)
@@ -59,6 +62,7 @@ fun MultiNumberAnalysisScreen(rows:List<CdrRecord>){
             item{LazyRow(horizontalArrangement=Arrangement.spacedBy(6.dp)){items(listOf(5,15,30,60)){m->FilterChip(window==m,{window=m},{Text("±${m}m")})}}}
             item{LazyRow(horizontalArrangement=Arrangement.spacedBy(6.dp)){items(listOf(30,60,120,360)){m->FilterChip(gap==m,{gap=m},{Text("Episode ${m}m")})}}}
             item{Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(6.dp)){MultiMetric("Common contacts",result.contacts.size.toString(),Modifier.weight(1f));MultiMetric("Location episodes",result.locations.size.toString(),Modifier.weight(1f));MultiMetric("Direct links",result.directLinks.size.toString(),Modifier.weight(1f))}}
+            item{CommunicationNetworkCard(selected.toList().sorted(),result.contacts.take(12),rows)}
             item{Text("Matching location episodes",style=MaterialTheme.typography.titleMedium)}
             if(result.locations.isEmpty())item{Text("No same-tower time-window match for the selected subjects.")}else items(result.locations.take(100)){m->ListItem(headlineContent={Text("Tower ${m.tower}")},supportingContent={Text("${m.start} → ${m.end} • ${m.records} event(s) • ${m.durationMinutes} min\nSubjects: ${m.subjects.joinToString()}")});HorizontalDivider()}
             item{Text("Common contacts",style=MaterialTheme.typography.titleMedium)}
@@ -72,4 +76,34 @@ fun MultiNumberAnalysisScreen(rows:List<CdrRecord>){
         }
     }
 }
+@Composable
+private fun CommunicationNetworkCard(subjects:List<String>,contacts:List<MultiContact>,rows:List<CdrRecord>){
+    if(subjects.isEmpty())return
+    val primary=MaterialTheme.colorScheme.primary
+    val secondary=MaterialTheme.colorScheme.secondary
+    val outline=MaterialTheme.colorScheme.outline
+    val maxRecords=(contacts.maxOfOrNull{it.records}?:1).coerceAtLeast(1)
+    Card(Modifier.fillMaxWidth()){
+        Column(Modifier.padding(10.dp),verticalArrangement=Arrangement.spacedBy(6.dp)){
+            Text("Communication Network",style=MaterialTheme.typography.titleMedium)
+            Text("Selected subjects linked to the most frequent shared contacts.",style=MaterialTheme.typography.bodySmall)
+            Canvas(Modifier.fillMaxWidth().height(260.dp)){
+                fun subjectPos(i:Int)=Offset(42.dp.toPx(),((i+1).toFloat()/(subjects.size+1).toFloat())*size.height)
+                fun contactPos(i:Int)=Offset(size.width-42.dp.toPx(),((i+1).toFloat()/(contacts.size+1).toFloat())*size.height)
+                subjects.forEachIndexed{si,subject->
+                    contacts.forEachIndexed{ci,contact->
+                        val count=rows.count{it.number==subject&&it.otherParty==contact.number}
+                        if(count>0)drawLine(outline,subjectPos(si),contactPos(ci),strokeWidth=1.5f+5f*(count.toFloat()/maxRecords.toFloat()))
+                    }
+                }
+                subjects.forEachIndexed{i,_->drawCircle(primary,12.dp.toPx(),subjectPos(i),style=Stroke(width=4.dp.toPx()))}
+                contacts.forEachIndexed{i,_->drawCircle(secondary,9.dp.toPx(),contactPos(i))}
+            }
+            Text("Subjects: ${subjects.joinToString()}",style=MaterialTheme.typography.labelSmall)
+            if(contacts.isNotEmpty())Text("Top shared contacts: ${contacts.joinToString{it.number}}",style=MaterialTheme.typography.labelSmall)
+            Text("Edge weight reflects CDR record counts only and does not establish association or intent.",style=MaterialTheme.typography.labelSmall)
+        }
+    }
+}
+
 @Composable private fun MultiMetric(label:String,value:String,modifier:Modifier=Modifier){Surface(modifier,tonalElevation=1.dp,shape=MaterialTheme.shapes.small){Column(Modifier.padding(8.dp)){Text(value,style=MaterialTheme.typography.titleMedium);Text(label,style=MaterialTheme.typography.labelSmall)}}}
