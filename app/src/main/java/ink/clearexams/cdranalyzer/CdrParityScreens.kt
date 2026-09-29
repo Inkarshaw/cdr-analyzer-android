@@ -24,7 +24,8 @@ data class CdrFilters(
     val provider: String = "", val operator: String = "", val sourceFile: String = "",
     val minDuration: String = "", val maxDuration: String = "",
     val callsOnly: Boolean = false, val smsOnly: Boolean = false,
-    val nightOnly: Boolean = false, val weekendOnly: Boolean = false
+    val nightOnly: Boolean = false, val weekendOnly: Boolean = false,
+    val excludeServiceSenders: Boolean = false
 )
 
 fun duplicateSafeRows(rows: List<CdrRecord>): List<CdrRecord> = rows.distinctBy { r ->
@@ -69,7 +70,8 @@ fun applyCdrFilters(rows: List<CdrRecord>, filters: CdrFilters): List<CdrRecord>
             (maxDur == null || (duration != null && duration <= maxDur)) &&
             (!filters.callsOnly || event.contains("Call", true) || event in listOf("Incoming", "Outgoing")) &&
             (!filters.smsOnly || event.contains("SMS", true)) && (!filters.nightOnly || night) &&
-            (!filters.weekendOnly || weekend)
+            (!filters.weekendOnly || weekend) &&
+            (!filters.excludeServiceSenders || !r.otherParty.matches(Regex("[A-Za-z]{2,3}-[A-Za-z0-9]{3,20}")))
     }
 }
 
@@ -114,6 +116,7 @@ fun AdvancedFiltersPanel(filters: CdrFilters, sourceFiles: List<String>, onChang
                 item { FilterChip(filters.smsOnly, { onChange(filters.copy(smsOnly = !filters.smsOnly, callsOnly = false)) }, { Text("SMS") }) }
                 item { FilterChip(filters.nightOnly, { onChange(filters.copy(nightOnly = !filters.nightOnly)) }, { Text("Night") }) }
                 item { FilterChip(filters.weekendOnly, { onChange(filters.copy(weekendOnly = !filters.weekendOnly)) }, { Text("Weekend") }) }
+                item { FilterChip(filters.excludeServiceSenders, { onChange(filters.copy(excludeServiceSenders = !filters.excludeServiceSenders)) }, { Text("Exclude service senders") }) }
             }
             if (expanded) {
                 OutlinedTextField(filters.eventType, { onChange(filters.copy(eventType = it)) }, label = { Text("Event type") }, singleLine = true, modifier = Modifier.fillMaxWidth())
@@ -144,7 +147,7 @@ fun AdvancedFiltersPanel(filters: CdrFilters, sourceFiles: List<String>, onChang
                     }
                 }
             }
-            val activeCount = listOf(filters.aParty, filters.bParty, filters.dateFrom, filters.dateTo, filters.timeFrom, filters.timeTo, filters.eventType, filters.imei, filters.imsi, filters.cellId, filters.towerAddress, filters.city, filters.subCity, filters.roaming, filters.provider, filters.operator, filters.sourceFile, filters.minDuration, filters.maxDuration).count { it.isNotBlank() } + listOf(filters.callsOnly, filters.smsOnly, filters.nightOnly, filters.weekendOnly).count { it }
+            val activeCount = listOf(filters.aParty, filters.bParty, filters.dateFrom, filters.dateTo, filters.timeFrom, filters.timeTo, filters.eventType, filters.imei, filters.imsi, filters.cellId, filters.towerAddress, filters.city, filters.subCity, filters.roaming, filters.provider, filters.operator, filters.sourceFile, filters.minDuration, filters.maxDuration).count { it.isNotBlank() } + listOf(filters.callsOnly, filters.smsOnly, filters.nightOnly, filters.weekendOnly, filters.excludeServiceSenders).count { it }
             if (activeCount > 0) OutlinedButton(onClick = { onChange(CdrFilters()) }, modifier = Modifier.fillMaxWidth()) { Text("Clear $activeCount active filter(s)") }
         }
     }
