@@ -49,6 +49,9 @@ fun DeviceIntelligenceScreen(rows:List<CdrRecord>){
         if(result.crossImsi.isEmpty())item{Text("No IMSI is associated with multiple loaded subjects.")}else items(result.crossImsi){e->ListItem(headlineContent={Text(e.imsi)},supportingContent={Text("${e.records} record(s) • subjects: ${e.subjects.joinToString()}")});HorizontalDivider()}
         item{Text("IMEI with multiple IMSIs",style=MaterialTheme.typography.titleMedium)}
         if(result.multiImsi.isEmpty())item{Text("No IMEI is associated with multiple IMSIs.")}else items(result.multiImsi){e->ListItem(headlineContent={Text(e.imei)},supportingContent={Text("${e.records} record(s) • IMSI: ${e.imsis.joinToString()}")});HorizontalDivider()}
+        item{Text("IMEI ↔ IMSI relationship matrix",style=MaterialTheme.typography.titleMedium)}
+        val matrix=rows.filter{it.imei.isNotBlank()&&it.imsi.isNotBlank()}.groupBy{it.imei}.map{(imei,x)->Triple(imei,x.map{it.imsi}.distinct().sorted(),x.size)}.sortedByDescending{it.third}
+        if(matrix.isEmpty())item{Text("No row contains both IMEI and IMSI.")}else items(matrix.take(300)){m->ListItem(headlineContent={Text(m.first)},supportingContent={Text("${m.third} record(s) • IMSI: ${m.second.joinToString()}")});HorizontalDivider()}
     }
 }
 @Composable private fun DeviceMetric(label:String,value:String,modifier:Modifier=Modifier){Surface(modifier,tonalElevation=1.dp,shape=MaterialTheme.shapes.small){Column(Modifier.padding(8.dp)){Text(value,style=MaterialTheme.typography.titleMedium);Text(label,style=MaterialTheme.typography.labelSmall)}}}
