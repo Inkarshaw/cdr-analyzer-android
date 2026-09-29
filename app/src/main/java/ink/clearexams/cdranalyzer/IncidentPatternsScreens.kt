@@ -45,6 +45,10 @@ fun IncidentAnalysisScreen(rows:List<CdrRecord>){
 @Composable
 fun PatternsScreen(rows:List<CdrRecord>){
     val result=remember(rows){PatternAnalysis.build(rows)}
+    data class MatrixRow(val date:String,val hour:Int,val contact:String)
+    val matrixRows=remember(rows){rows.mapNotNull{r->parseCdrTime(r.dateTime)?.let{ts->val cal=java.util.Calendar.getInstance().apply{timeInMillis=ts};MatrixRow(java.text.SimpleDateFormat("yyyy-MM-dd",java.util.Locale.US).format(cal.time),cal.get(java.util.Calendar.HOUR_OF_DAY),r.otherParty)}}}
+    val matrixDates=remember(matrixRows){matrixRows.map{it.date}.distinct().sorted().takeLast(14)}
+    val topMatrixContacts=remember(matrixRows){matrixRows.filter{it.contact.isNotBlank()}.groupingBy{it.contact}.eachCount().entries.sortedByDescending{it.value}.take(10).map{it.key}}
     LazyColumn(Modifier.fillMaxSize(),contentPadding=PaddingValues(vertical=8.dp),verticalArrangement=Arrangement.spacedBy(8.dp)){
         item{Text("Activity Patterns",style=MaterialTheme.typography.titleLarge)}
         item{Text("Pattern summaries are descriptive metadata. Lower-frequency hours and statistical high-activity dates are review indicators, not conclusions.",style=MaterialTheme.typography.bodySmall)}
@@ -68,6 +72,10 @@ fun PatternsScreen(rows:List<CdrRecord>){
         items(result.weekdayContactHours.take(100)){p->ListItem(headlineContent={Text("${p.weekday} • ${p.number} • %02d:00".format(Locale.US,p.hour))},supportingContent={Text("${p.activeDates} date(s) • ${p.events} event(s)")});HorizontalDivider()}
         item{Text("24-hour activity",style=MaterialTheme.typography.titleMedium)}
         item{LazyRow(horizontalArrangement=Arrangement.spacedBy(4.dp)){items(result.hours){h->PatternMetric("%02d".format(Locale.US,h.hour),h.events.toString())}}}
+        item{Text("Date × hour activity matrix",style=MaterialTheme.typography.titleMedium)}
+        if(matrixDates.isEmpty())item{Text("No parseable timestamps for the matrix.")}else items(matrixDates){date->val counts=(0..23).map{h->matrixRows.count{it.date==date&&it.hour==h}};Column{Text(date,style=MaterialTheme.typography.labelMedium);LazyRow(horizontalArrangement=Arrangement.spacedBy(3.dp)){items(counts.mapIndexed{i,v->i to v}){cell->Surface(tonalElevation=if(cell.second>0)2.dp else 0.dp,shape=MaterialTheme.shapes.small){Column(Modifier.width(42.dp).padding(4.dp)){Text("%02d".format(Locale.US,cell.first),style=MaterialTheme.typography.labelSmall);Text(cell.second.toString(),style=MaterialTheme.typography.bodySmall)}}}}}}
+        item{Text("Contact × day matrix",style=MaterialTheme.typography.titleMedium)}
+        if(topMatrixContacts.isEmpty())item{Text("No B-party contacts available for the matrix.")}else items(topMatrixContacts){contact->Column{Text(contact,style=MaterialTheme.typography.labelMedium);LazyRow(horizontalArrangement=Arrangement.spacedBy(3.dp)){items(matrixDates){date->val count=matrixRows.count{it.contact==contact&&it.date==date};Surface(tonalElevation=if(count>0)2.dp else 0.dp,shape=MaterialTheme.shapes.small){Column(Modifier.width(82.dp).padding(4.dp)){Text(date.takeLast(5),style=MaterialTheme.typography.labelSmall);Text(count.toString(),style=MaterialTheme.typography.bodySmall)}}}}}}
     }
 }
 
