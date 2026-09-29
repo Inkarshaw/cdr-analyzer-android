@@ -47,7 +47,33 @@ object TacDatabaseImporter{
         if(ti<0)return emptyList();return lines.drop(1).mapNotNull{line->val v=csv(line);entry(v.getOrElse(ti){""},v.getOrElse(mi){""},v.getOrElse(model){""},v.getOrElse(di){""},v.getOrElse(oi){""})}
     }
     private fun parseWorkbook(resolver:ContentResolver,uri:Uri):List<TacEntry>{
-        val out=mutableListOf<TacEntry>();resolver.openInputStream(uri)?.use{stream->WorkbookFactory.create(stream).use{wb->val fmt=DataFormatter();for(si in 0 until wb.numberOfSheets){val sh=wb.getSheetAt(si);if(sh.lastRowNum<1)continue;val h=sh.getRow(0)?:continue;val header=(0 until h.lastCellNum.coerceAtLeast(0)).map{fmt.formatCellValue(h.getCell(it)).lowercase().replace(" ","").replace("_","")};fun idx(vararg n:String)=header.indexOfFirst{x->n.any{x.contains(it)}};val ti=idx("tac");if(ti<0)continue;val mi=idx("manufacturer","brand","maker");val model=idx("model");val di=idx("devicetype","type");val oi=idx("os","operatingsystem");for(ri in 1..sh.lastRowNum){val r=sh.getRow(ri)?:continue;fun v(i:Int)=if(i<0)"" else fmt.formatCellValue(r.getCell(i)).trim();entry(v(ti),v(mi),v(model),v(di),v(oi))?.let(out::add)}}}};return out
+        val out=mutableListOf<TacEntry>()
+        resolver.openInputStream(uri)?.use{stream->
+            WorkbookFactory.create(stream).use{wb->
+                val fmt=DataFormatter()
+                for(si in 0 until wb.numberOfSheets){
+                    val sh=wb.getSheetAt(si)
+                    if(sh.lastRowNum<1) continue
+                    val h=sh.getRow(0)?:continue
+                    val header=(0 until h.lastCellNum.coerceAtLeast(0)).map{
+                        fmt.formatCellValue(h.getCell(it)).lowercase().replace(" ","").replace("_","")
+                    }
+                    fun indexOf(vararg names:String)=header.indexOfFirst{value->names.any{value.contains(it)}}
+                    val ti=indexOf("tac")
+                    if(ti<0) continue
+                    val mi=indexOf("manufacturer","brand","maker")
+                    val modelIndex=indexOf("model")
+                    val di=indexOf("devicetype","type")
+                    val oi=indexOf("os","operatingsystem")
+                    for(ri in 1..sh.lastRowNum){
+                        val row=sh.getRow(ri)?:continue
+                        fun value(index:Int)=if(index<0)"" else fmt.formatCellValue(row.getCell(index)).trim()
+                        entry(value(ti),value(mi),value(modelIndex),value(di),value(oi))?.let(out::add)
+                    }
+                }
+            }
+        }
+        return out
     }
     private fun entry(t:String,m:String,model:String,d:String,o:String):TacEntry?{val tac=t.filter{it.isDigit()}.take(8);return if(tac.length==8)TacEntry(tac,m.trim(),model.trim(),d.trim(),o.trim()) else null}
     private fun csv(line:String):List<String>{val out=mutableListOf<String>();val b=StringBuilder();var q=false;var i=0;while(i<line.length){val c=line[i];when{c=='"'&&q&&i+1<line.length&&line[i+1]=='"'->{b.append('"');i++};c=='"'->q=!q;c==','&&!q->{out+=b.toString();b.clear()};else->b.append(c)};i++};out+=b.toString();return out}
