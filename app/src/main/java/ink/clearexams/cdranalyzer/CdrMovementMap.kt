@@ -83,6 +83,7 @@ fun CdrMovementMap(points: List<GeoPoint>, modifier: Modifier = Modifier) {
     var fromText by remember(points){mutableStateOf("")}; var toText by remember(points){mutableStateOf("")}; var playing by remember(points){mutableStateOf(false)}; var showVisits by remember{mutableStateOf(false)}; var showTransitions by remember{mutableStateOf(false)}; var showAnomalies by remember{mutableStateOf(false)}; var mapFocus by remember{mutableStateOf<MapFocus?>(null)}; var mapRef by remember{mutableStateOf<MapView?>(null)}
     var showRapidFlags by remember{mutableStateOf(true)}; var showLongGapFlags by remember{mutableStateOf(true)}; var showReturnFlags by remember{mutableStateOf(true)}
     var heatMapEnabled by remember{mutableStateOf(false)}
+    var mapPrivacyMode by remember{mutableStateOf(false)}
     var playbackSpeed by remember{mutableDoubleStateOf(1.0)}
     var playbackTrailPoints by remember{mutableIntStateOf(15)}
     var thresholds by remember { mutableStateOf(MovementIntelligence.Thresholds(prefs.getFloat("rapidDistanceKm",defaults.rapidDistanceKm.toFloat()).toDouble(),prefs.getLong("rapidWindowMinutes",defaults.rapidWindowMinutes),prefs.getLong("longGapMinutes",defaults.longGapMinutes),prefs.getLong("returnWindowMinutes",defaults.returnWindowMinutes))) }
@@ -206,6 +207,7 @@ fun CdrMovementMap(points: List<GeoPoint>, modifier: Modifier = Modifier) {
         Card(Modifier.fillMaxWidth().padding(horizontal=8.dp,vertical=4.dp)){Column(Modifier.padding(10.dp),verticalArrangement=Arrangement.spacedBy(6.dp)){Text("Movement Intelligence",style=MaterialTheme.typography.titleSmall);Text("${intel.visits.size} towers • ${intel.repeatedTowers} repeated • ${intel.transitions.size} transitions • ${visibleAnomalies.size} visible / ${intel.anomalies.size} total flags",style=MaterialTheme.typography.bodySmall);intel.visits.firstOrNull()?.let{top->Text("Most observed: ${top.tower} • ${top.records} record(s) • first ${top.firstSeen} • last ${top.lastSeen}",style=MaterialTheme.typography.bodySmall)};Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(6.dp)){OutlinedButton({showVisits=true},Modifier.weight(1f),enabled=intel.visits.isNotEmpty()){Text("Visits")};OutlinedButton({showTransitions=true},Modifier.weight(1f),enabled=intel.transitions.isNotEmpty()){Text("Transitions")};OutlinedButton({showAnomalies=true},Modifier.weight(1f),enabled=visibleAnomalies.isNotEmpty()){Text("Flags (${visibleAnomalies.size})")}};if(visibleAnomalies.isEmpty()&&intel.anomalies.isNotEmpty())Text("No review flag types are currently selected.",style=MaterialTheme.typography.bodySmall);Text("Flags identify patterns for review only. Tower observations do not establish the handset's exact position or continuous travel.",style=MaterialTheme.typography.labelSmall)}}
         mapFocus?.let{f->Card(Modifier.fillMaxWidth().padding(horizontal=8.dp,vertical=4.dp)){Row(Modifier.fillMaxWidth().padding(10.dp),horizontalArrangement=Arrangement.SpaceBetween){Column(Modifier.weight(1f)){Text("Map focus",style=MaterialTheme.typography.titleSmall);Text("${f.label} • ${f.points.size} highlighted observation(s)",style=MaterialTheme.typography.bodySmall)};TextButton({mapFocus=null}){Text("Clear")}}}}
         val safe=step.coerceIn(0,(active.size-1).coerceAtLeast(0))
+        Card(Modifier.fillMaxWidth().padding(horizontal=8.dp,vertical=4.dp)){Row(Modifier.fillMaxWidth().padding(10.dp),horizontalArrangement=Arrangement.SpaceBetween){Column(Modifier.weight(1f)){Text("Map Privacy Mode",style=MaterialTheme.typography.titleSmall);Text(if(mapPrivacyMode)"External map-tile fetching is disabled." else "OpenStreetMap tiles may be requested while the map is used.",style=MaterialTheme.typography.bodySmall)};Switch(checked=mapPrivacyMode,onCheckedChange={mapPrivacyMode=it})}}
         MovementPlaybackV2Card(
             points=active,
             step=safe,
@@ -236,6 +238,7 @@ fun CdrMovementMap(points: List<GeoPoint>, modifier: Modifier = Modifier) {
                 MapView(ctx).apply{setMultiTouchControls(true);minZoomLevel=3.0;maxZoomLevel=20.0;mapRef=this}
             },
             update={map->
+                map.setUseDataConnection(!mapPrivacyMode)
                 map.overlays.clear()
                 if(active.isEmpty()) return@AndroidView
                 val focus=mapFocus
@@ -311,6 +314,7 @@ fun CdrMovementMap(points: List<GeoPoint>, modifier: Modifier = Modifier) {
                 map.invalidate()
             }
         )
+        TowerSequencePlotCard(if(mapFocus!=null)mapFocus!!.points else active)
     };DisposableEffect(Unit){onDispose{playing=false;mapRef?.onDetach()}}
 }
 
