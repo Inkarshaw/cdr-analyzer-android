@@ -34,30 +34,131 @@ data class GeoPoint(val at:String,val tower:String,val latitude:Double,val longi
 
 class MainActivity : ComponentActivity() {
  private val prefs by lazy { getSharedPreferences("contact_tags", MODE_PRIVATE) }
- override fun onCreate(savedInstanceState:Bundle?){super.onCreate(savedInstanceState);setContent{MaterialTheme{CdrApp()}}}
+ override fun onCreate(savedInstanceState:Bundle?){super.onCreate(savedInstanceState);setContent{NexusTheme{CdrApp()}}}
  private fun loadTags():Map<String,ContactTag>{val o=mutableMapOf<String,ContactTag>();prefs.all.forEach{(k,v)->val r=v as? String?:return@forEach;val p=r.split("|",limit=2);o[k]=ContactTag(p.getOrElse(0){""},p.getOrElse(1){""})};return o}
  private fun saveTag(n:String,t:ContactTag){prefs.edit().putString(n,"${t.name}|${t.relation}").apply()}
 
  @OptIn(ExperimentalMaterial3Api::class)
  @Composable private fun CdrApp(){
-  var rows by remember{mutableStateOf<List<CdrRecord>>(emptyList())};var fileName by remember{mutableStateOf("No CDR loaded")};var error by remember{mutableStateOf<String?>(null)};var tab by remember{mutableIntStateOf(0)};var search by remember{mutableStateOf("")};var tags by remember{mutableStateOf(loadTags())};var editNumber by remember{mutableStateOf<String?>(null)};var duplicateSafe by remember{mutableStateOf(true)};var cdrFilters by remember{mutableStateOf(CdrFilters())};val appContext=androidx.compose.ui.platform.LocalContext.current;val caseStore=remember(appContext){CaseWorkspaceStore(appContext)}
-  val picker=rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()){uris:List<Uri>->if(uris.isNotEmpty()){val imported=mutableListOf<CdrRecord>();val sourceNames=mutableListOf<String>();val warnings=mutableListOf<String>();uris.forEach{uri->runCatching{contentResolver.takePersistableUriPermission(uri,android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)};runCatching{CdrImportParser.parse(contentResolver,uri)}.onSuccess{result->imported+=result.records;sourceNames+=result.sources.map{it.fileName}.distinct();warnings+=result.warnings}.onFailure{warnings+="${uri.lastPathSegment?:"CDR file"}: ${it.message?:"Import failed"}"}};rows=imported;fileName=if(sourceNames.isEmpty())"${uris.size} selected file(s)" else "${sourceNames.distinct().size} file(s) • ${imported.size} records";error=warnings.takeIf{it.isNotEmpty()}?.joinToString("\n");cdrFilters=CdrFilters();search="";tab=0}}
-  val analysisRows=remember(rows,duplicateSafe){if(duplicateSafe)duplicateSafeRows(rows) else rows};val advancedFiltered=remember(analysisRows,cdrFilters){applyCdrFilters(analysisRows,cdrFilters)};val filtered=remember(advancedFiltered,search,tags){if(search.isBlank())advancedFiltered else advancedFiltered.filter{r->val t=tags[r.otherParty]?:tags[r.number];listOf(r.number,r.otherParty,r.direction,r.dateTime,r.imei,r.imsi,r.cellId,r.lac,r.latitude,r.longitude,r.towerAddress,r.mainCity,r.subCity,r.provider,r.operator,r.sourceFile,t?.name.orEmpty(),t?.relation.orEmpty()).any{it.contains(search,true)}}}
+  var rows by remember{mutableStateOf<List<CdrRecord>>(emptyList())}
+  var fileName by remember{mutableStateOf("No CDR loaded")}
+  var error by remember{mutableStateOf<String?>(null)}
+  var tab by remember{mutableIntStateOf(0)}
+  var search by remember{mutableStateOf("")}
+  var tags by remember{mutableStateOf(loadTags())}
+  var editNumber by remember{mutableStateOf<String?>(null)}
+  var duplicateSafe by remember{mutableStateOf(true)}
+  var cdrFilters by remember{mutableStateOf(CdrFilters())}
+  var filtersOpen by remember{mutableStateOf(false)}
+  var toolsOpen by remember{mutableStateOf(false)}
+  var auxiliaryView by remember{mutableStateOf<String?>(null)}
+  var draftSearch by remember{mutableStateOf("")}
+  var draftFilters by remember{mutableStateOf(CdrFilters())}
+  var draftDuplicateSafe by remember{mutableStateOf(true)}
+  val appContext=androidx.compose.ui.platform.LocalContext.current
+  val caseStore=remember(appContext){CaseWorkspaceStore(appContext)}
+  val picker=rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()){uris:List<Uri>->
+   if(uris.isNotEmpty()){
+    val imported=mutableListOf<CdrRecord>();val sourceNames=mutableListOf<String>();val warnings=mutableListOf<String>()
+    uris.forEach{uri->
+     runCatching{contentResolver.takePersistableUriPermission(uri,android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)}
+     runCatching{CdrImportParser.parse(contentResolver,uri)}.onSuccess{result->imported+=result.records;sourceNames+=result.sources.map{it.fileName}.distinct();warnings+=result.warnings}.onFailure{warnings+="${uri.lastPathSegment?:"CDR file"}: ${it.message?:"Import failed"}"}
+    }
+    rows=imported
+    fileName=if(sourceNames.isEmpty())"${uris.size} selected file(s)" else "${sourceNames.distinct().size} file(s) • ${imported.size} records"
+    error=warnings.takeIf{it.isNotEmpty()}?.joinToString("\n")
+    cdrFilters=CdrFilters();draftFilters=CdrFilters();search="";draftSearch="";tab=0;auxiliaryView=null;filtersOpen=false
+   }
+  }
+  val analysisRows=remember(rows,duplicateSafe){if(duplicateSafe)duplicateSafeRows(rows) else rows}
+  val advancedFiltered=remember(analysisRows,cdrFilters){applyCdrFilters(analysisRows,cdrFilters)}
+  val filtered=remember(advancedFiltered,search,tags){if(search.isBlank())advancedFiltered else advancedFiltered.filter{r->val t=tags[r.otherParty]?:tags[r.number];listOf(r.number,r.otherParty,r.direction,r.dateTime,r.imei,r.imsi,r.cellId,r.lac,r.latitude,r.longitude,r.towerAddress,r.mainCity,r.subCity,r.provider,r.operator,r.sourceFile,t?.name.orEmpty(),t?.relation.orEmpty()).any{it.contains(search,true)}}}
   val summary=remember(filtered){Summary(filtered.size,filtered.map{it.otherParty}.filter{it.isNotBlank()}.distinct().size,filtered.count{normalizeDirection(it.direction)=="Incoming"},filtered.count{normalizeDirection(it.direction)=="Outgoing"})}
-  Scaffold(topBar={TopAppBar(title={Column{Text("CDR Analyzer");Text("Native • Local analysis",style=MaterialTheme.typography.labelSmall)}})}){p->Column(Modifier.padding(p).padding(horizontal=12.dp,vertical=8.dp).fillMaxSize()){
-   Column(Modifier.fillMaxWidth().heightIn(max=390.dp).verticalScroll(rememberScrollState())){
-    Button(onClick={picker.launch(arrayOf("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet","application/vnd.ms-excel","text/csv","text/comma-separated-values","*/*"))},modifier=Modifier.fillMaxWidth()){Text("Import CDR file(s)")};Text(fileName,style=MaterialTheme.typography.bodySmall,modifier=Modifier.padding(vertical=6.dp));error?.let{Text(it,color=MaterialTheme.colorScheme.error,style=MaterialTheme.typography.bodySmall)}
-    Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(8.dp)){Stat("Records",summary.records.toString(),Modifier.weight(1f));Stat("Contacts",summary.contacts.toString(),Modifier.weight(1f))};Spacer(Modifier.height(6.dp));Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(8.dp)){Stat("Incoming",summary.incoming.toString(),Modifier.weight(1f));Stat("Outgoing",summary.outgoing.toString(),Modifier.weight(1f))}
-    OutlinedTextField(search,{search=it},label={Text("Search name / number / IMEI / IMSI / tower / source")},singleLine=true,modifier=Modifier.fillMaxWidth().padding(top=8.dp));AnalysisIntegrityCard(rows,duplicateSafe){duplicateSafe=it};AdvancedFiltersPanel(cdrFilters,rows.map{it.sourceFile}.filter{it.isNotBlank()}.distinct().sorted()){cdrFilters=it}
+  val activeFilterCount=remember(search,cdrFilters){
+   listOf(cdrFilters.aParty,cdrFilters.bParty,cdrFilters.dateFrom,cdrFilters.dateTo,cdrFilters.timeFrom,cdrFilters.timeTo,cdrFilters.eventType,cdrFilters.imei,cdrFilters.imsi,cdrFilters.cellId,cdrFilters.towerAddress,cdrFilters.city,cdrFilters.subCity,cdrFilters.roaming,cdrFilters.provider,cdrFilters.operator,cdrFilters.sourceFile,cdrFilters.minDuration,cdrFilters.maxDuration).count{it.isNotBlank()} +
+    listOf(cdrFilters.callsOnly,cdrFilters.smsOnly,cdrFilters.nightOnly,cdrFilters.weekendOnly,cdrFilters.excludeServiceSenders).count{it} + if(search.isNotBlank())1 else 0
+  }
+  val primaryTabs=listOf("Dashboard","Records","Excel View","Contacts","Locations","Devices","SMS Intelligence","Incident Timeline","Patterns","Movement","Multi-number")
+
+  if(filtersOpen){
+   ModalBottomSheet(onDismissRequest={filtersOpen=false}){
+    Column(Modifier.fillMaxWidth().fillMaxHeight(0.92f).verticalScroll(rememberScrollState()).padding(horizontal=16.dp,vertical=8.dp),verticalArrangement=Arrangement.spacedBy(10.dp)){
+     Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween,verticalAlignment=Alignment.CenterVertically){Text("Filters",style=MaterialTheme.typography.titleLarge);Badge{Text(activeFilterCount.toString())}}
+     Card(Modifier.fillMaxWidth()){Column(Modifier.padding(12.dp),verticalArrangement=Arrangement.spacedBy(7.dp)){
+      Text("Upload CDR file(s)",style=MaterialTheme.typography.titleMedium)
+      Text("Choose one or more .xlsx, .xls or .csv files. Likely CDR worksheets and recognized columns are mapped automatically.",style=MaterialTheme.typography.bodySmall)
+      Button({picker.launch(arrayOf("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet","application/vnd.ms-excel","text/csv","text/comma-separated-values","*/*"))},Modifier.fillMaxWidth()){Text("Choose Files")}
+      Text(fileName,style=MaterialTheme.typography.bodySmall)
+      val loadedFiles=rows.map{it.sourceFile}.filter{it.isNotBlank()}.distinct()
+      loadedFiles.take(8).forEach{Text("• $it",style=MaterialTheme.typography.labelSmall)}
+      if(loadedFiles.size>8)Text("+${loadedFiles.size-8} more",style=MaterialTheme.typography.labelSmall)
+      error?.let{Text(it,color=MaterialTheme.colorScheme.error,style=MaterialTheme.typography.bodySmall)}
+      OutlinedButton({rows=emptyList();fileName="No CDR loaded";error=null;search="";draftSearch="";cdrFilters=CdrFilters();draftFilters=CdrFilters()},Modifier.fillMaxWidth(),enabled=rows.isNotEmpty()){Text("Clear Loaded CDRs")}
+     }}
+     Text("Quick filters",style=MaterialTheme.typography.titleMedium)
+     OutlinedTextField(draftSearch,{draftSearch=it},label={Text("Any text")},placeholder={Text("Number, tower, IMEI, name…")},singleLine=true,modifier=Modifier.fillMaxWidth())
+     AnalysisIntegrityCard(rows,draftDuplicateSafe){draftDuplicateSafe=it}
+     AdvancedFiltersPanel(draftFilters,rows.map{it.sourceFile}.filter{it.isNotBlank()}.distinct().sorted()){draftFilters=it}
+     Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(8.dp)){
+      OutlinedButton({draftSearch="";draftFilters=CdrFilters();draftDuplicateSafe=true},Modifier.weight(1f)){Text("Reset")}
+      Button({search=draftSearch;cdrFilters=draftFilters;duplicateSafe=draftDuplicateSafe;filtersOpen=false},Modifier.weight(1f)){Text("Apply")}
+     }
+     Spacer(Modifier.height(18.dp))
+    }
    }
-   ScrollableTabRow(tab,edgePadding=0.dp,modifier=Modifier.padding(top=8.dp)){listOf("Dashboard","Records","Excel","Contacts","Locations","Devices","SMS","Incident","Patterns","Movement","Multi-number","Cases","Quality","Notes").forEachIndexed{i,t->Tab(tab==i,{tab=i},text={Text(t)})}}
-   Box(Modifier.fillMaxWidth().weight(1f)){
-    when(tab){0->CdrDashboardScreen(filtered,tags){editNumber=it};1->RecordList(filtered,tags){editNumber=it};2->ExcelViewScreen(rows);3->ContactList(filtered,tags){editNumber=it};4->TowerList(filtered);5->DeviceIntelligenceScreen(filtered);6->SmsIntelligenceScreen(filtered);7->IncidentAnalysisScreen(filtered);8->PatternsScreen(filtered);9->MovementList(filtered);10->MultiNumberAnalysisScreen(filtered);11->CaseWorkspaceScreen(caseStore,rows,fileName){loaded,name->rows=loaded;fileName=name;search="";cdrFilters=CdrFilters();tab=0};12->DataQualityScreen(rows);else->InvestigationNotesScreen()}
+  }
+
+  Scaffold(
+   containerColor=MaterialTheme.colorScheme.background,
+   topBar={TopAppBar(
+    title={Column{Row(verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(8.dp)){Text("CDR Case Analyzer");Badge{Text("v50")}};Text("NEXUS intelligence console • local analysis • XLSX / XLS / CSV",style=MaterialTheme.typography.labelSmall,color=MaterialTheme.colorScheme.onSurfaceVariant)}},
+    actions={TextButton({CdrPrintReport.print(appContext,filtered,summary)},enabled=filtered.isNotEmpty()){Text("Print / PDF")}}
+   )}
+  ){p->
+   Column(Modifier.padding(p).padding(horizontal=10.dp,vertical=8.dp).fillMaxSize()){
+    Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(8.dp)){
+     OutlinedButton({draftSearch=search;draftFilters=cdrFilters;draftDuplicateSafe=duplicateSafe;filtersOpen=true},Modifier.weight(1f)){Text("☰ Filters");Spacer(Modifier.width(6.dp));Badge{Text(activeFilterCount.toString())}}
+     Box(Modifier.weight(1f)){
+      OutlinedButton({toolsOpen=true},Modifier.fillMaxWidth()){Text("Tools")}
+      DropdownMenu(toolsOpen,{toolsOpen=false}){
+       DropdownMenuItem({Text("Cases / Workspace")},{toolsOpen=false;auxiliaryView="Cases"})
+       DropdownMenuItem({Text("Data Quality")},{toolsOpen=false;auxiliaryView="Quality"})
+       DropdownMenuItem({Text("Investigator Notes")},{toolsOpen=false;auxiliaryView="Notes"})
+      }
+     }
+    }
+    if(rows.isNotEmpty())Text("${filtered.size} filtered / ${analysisRows.size} analysis / ${rows.size} raw records",style=MaterialTheme.typography.labelSmall,color=MaterialTheme.colorScheme.onSurfaceVariant,modifier=Modifier.padding(vertical=5.dp))
+    if(auxiliaryView==null){
+     ScrollableTabRow(selectedTabIndex=tab,edgePadding=0.dp,modifier=Modifier.fillMaxWidth()){primaryTabs.forEachIndexed{i,t->Tab(tab==i,{tab=i;auxiliaryView=null},text={Text(t)})}}
+     Box(Modifier.fillMaxWidth().weight(1f).padding(top=6.dp)){
+      when(tab){
+       0->CdrDashboardScreen(filtered,tags){editNumber=it}
+       1->RecordList(filtered,tags){editNumber=it}
+       2->ExcelViewScreen(rows)
+       3->ContactList(filtered,tags){editNumber=it}
+       4->MultiNumberAnalysisScreen(filtered)
+       5->DeviceIntelligenceScreen(filtered)
+       6->SmsIntelligenceScreen(filtered)
+       7->IncidentAnalysisScreen(filtered)
+       8->PatternsScreen(filtered)
+       9->MovementList(filtered)
+       else->MultiNumberAnalysisScreen(filtered)
+      }
+     }
+    }else{
+     Row(Modifier.fillMaxWidth().padding(vertical=6.dp),verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(8.dp)){OutlinedButton({auxiliaryView=null}){Text("← Analyzer")};Text(auxiliaryView.orEmpty(),style=MaterialTheme.typography.titleMedium)}
+     Box(Modifier.fillMaxWidth().weight(1f)){
+      when(auxiliaryView){
+       "Cases"->CaseWorkspaceScreen(caseStore,rows,fileName){loaded,name->rows=loaded;fileName=name;search="";cdrFilters=CdrFilters();draftFilters=CdrFilters();tab=0;auxiliaryView=null}
+       "Quality"->DataQualityScreen(rows)
+       else->InvestigationNotesScreen()
+      }
+     }
+    }
    }
-  }}
+  }
   editNumber?.let{n->TagDialog(n,tags[n],{editNumber=null}){t->saveTag(n,t);tags=tags.toMutableMap().apply{put(n,t)};editNumber=null}}
  }
-
  @Composable private fun TagDialog(number:String,current:ContactTag?,onDismiss:()->Unit,onSave:(ContactTag)->Unit){var name by remember(number){mutableStateOf(current?.name.orEmpty())};var relation by remember(number){mutableStateOf(current?.relation?:"Other")};var custom by remember(number){mutableStateOf(if(current?.relation in listOf("Suspect","Victim","Witness","Associate","Family"))"" else current?.relation.orEmpty())};var expanded by remember{mutableStateOf(false)};AlertDialog(onDismissRequest=onDismiss,title={Text("Tag contact")},text={Column(verticalArrangement=Arrangement.spacedBy(8.dp)){Text(number);OutlinedTextField(name,{name=it},label={Text("Name / known identity")},singleLine=true,modifier=Modifier.fillMaxWidth());Box{OutlinedButton({expanded=true},Modifier.fillMaxWidth()){Text("Relation: $relation")};DropdownMenu(expanded,{expanded=false}){listOf("Suspect","Victim","Witness","Associate","Family","Other").forEach{o->DropdownMenuItem({Text(o)},{relation=o;expanded=false})}}};if(relation=="Other")OutlinedTextField(custom,{custom=it},label={Text("Custom relation / description")},singleLine=true,modifier=Modifier.fillMaxWidth())}},confirmButton={Button({onSave(ContactTag(name.trim(),if(relation=="Other")custom.trim().ifBlank{"Other"}else relation))}){Text("Save")}},dismissButton={TextButton(onDismiss){Text("Cancel")}})}
  @Composable private fun Stat(l:String,v:String,m:Modifier){Card(m){Column(Modifier.padding(10.dp)){Text(v,style=MaterialTheme.typography.headlineSmall);Text(l,style=MaterialTheme.typography.labelMedium)}}}
  private fun display(n:String,t:Map<String,ContactTag>):String{val x=t[n];return if(x!=null&&x.name.isNotBlank())"${x.name} ($n)" else n}
