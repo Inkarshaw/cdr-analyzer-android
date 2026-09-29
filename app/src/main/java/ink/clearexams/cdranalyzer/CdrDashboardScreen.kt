@@ -17,18 +17,29 @@ data class DashboardLead(val title:String,val detail:String,val records:Int)
 @Composable
 fun CdrDashboardScreen(rows:List<CdrRecord>,tags:Map<String,ContactTag>,onOpenContact:(String)->Unit={}){
     var burstMinutes by remember{mutableIntStateOf(10)};var burstMinimum by remember{mutableIntStateOf(3)};var longCallSec by remember{mutableIntStateOf(600)}
-    val contacts=remember(rows){rows.map{it.otherParty}.filter{it.isNotBlank()}.groupingBy{it}.eachCount().entries.sortedByDescending{it.value}}
-    val towers=remember(rows){rows.filter{it.cellId.isNotBlank()}.groupingBy{listOf(it.lac,it.cellId).filter{v->v.isNotBlank()}.joinToString("/")}.eachCount().entries.sortedByDescending{it.value}}
-    val imeis=remember(rows){rows.map{it.imei}.filter{it.isNotBlank()}.distinct()}
-    val imsis=remember(rows){rows.map{it.imsi}.filter{it.isNotBlank()}.distinct()}
-    val subjects=remember(rows){rows.map{it.number}.filter{it.isNotBlank()}.distinct()}
-    val hourly=remember(rows){(0..23).map{h->h to rows.count{r->parseCdrTime(r.dateTime)?.let{ts->Calendar.getInstance().apply{timeInMillis=ts}.get(Calendar.HOUR_OF_DAY)==h}==true}}}
-    val eventTypes=remember(rows){rows.groupingBy{dashboardEvent(it.direction)}.eachCount().entries.sortedByDescending{it.value}}
-    val leads=remember(rows,burstMinutes,burstMinimum,longCallSec){dashboardLeads(rows,burstMinutes,burstMinimum,longCallSec)}
+    var subjectScope by remember{mutableStateOf("")};var eventScope by remember{mutableStateOf("")};var subjectMenu by remember{mutableStateOf(false)};var eventMenu by remember{mutableStateOf(false)}
+    val subjects=remember(rows){rows.map{it.number}.filter{it.isNotBlank()}.distinct().sorted()}
+    val allEvents=remember(rows){rows.map{dashboardEvent(it.direction)}.distinct().sorted()}
+    val scoped=remember(rows,subjectScope,eventScope){rows.filter{r->(subjectScope.isBlank()||r.number==subjectScope)&&(eventScope.isBlank()||dashboardEvent(r.direction)==eventScope)}}
+    val contacts=remember(scoped){scoped.map{it.otherParty}.filter{it.isNotBlank()}.groupingBy{it}.eachCount().entries.sortedByDescending{it.value}}
+    val towers=remember(scoped){scoped.filter{it.cellId.isNotBlank()}.groupingBy{listOf(it.lac,it.cellId).filter{v->v.isNotBlank()}.joinToString("/")}.eachCount().entries.sortedByDescending{it.value}}
+    val imeis=remember(scoped){scoped.map{it.imei}.filter{it.isNotBlank()}.distinct()}
+    val imsis=remember(scoped){scoped.map{it.imsi}.filter{it.isNotBlank()}.distinct()}
+    val hourly=remember(scoped){(0..23).map{h->h to scoped.count{r->parseCdrTime(r.dateTime)?.let{ts->Calendar.getInstance().apply{timeInMillis=ts}.get(Calendar.HOUR_OF_DAY)==h}==true}}}
+    val eventTypes=remember(scoped){scoped.groupingBy{dashboardEvent(it.direction)}.eachCount().entries.sortedByDescending{it.value}}
+    val leads=remember(scoped,burstMinutes,burstMinimum,longCallSec){dashboardLeads(scoped,burstMinutes,burstMinimum,longCallSec)}
     val maxContact=(contacts.maxOfOrNull{it.value}?:1).coerceAtLeast(1);val maxHour=(hourly.maxOfOrNull{it.second}?:1).coerceAtLeast(1);val maxType=(eventTypes.maxOfOrNull{it.value}?:1).coerceAtLeast(1)
     LazyColumn(Modifier.fillMaxSize(),contentPadding=PaddingValues(vertical=8.dp),verticalArrangement=Arrangement.spacedBy(8.dp)){
-        item{Text("Case Dashboard",style=MaterialTheme.typography.titleLarge)}
-        item{Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(6.dp)){DashboardMetric("Records",rows.size.toString(),Modifier.weight(1f));DashboardMetric("Subjects",subjects.size.toString(),Modifier.weight(1f));DashboardMetric("Contacts",contacts.size.toString(),Modifier.weight(1f))}}
+        item{Text("Case dashboard",style=MaterialTheme.typography.titleLarge)}
+        item{Card(Modifier.fillMaxWidth()){Column(Modifier.padding(10.dp),verticalArrangement=Arrangement.spacedBy(6.dp)){
+            Text("Dashboard scope",style=MaterialTheme.typography.titleSmall)
+            Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(6.dp)){
+                Box(Modifier.weight(1f)){OutlinedButton({subjectMenu=true},Modifier.fillMaxWidth()){Text(subjectScope.ifBlank{"All subjects"})};DropdownMenu(subjectMenu,{subjectMenu=false}){DropdownMenuItem({Text("All subjects")},{subjectScope="";subjectMenu=false});subjects.forEach{s->DropdownMenuItem({Text(s)},{subjectScope=s;subjectMenu=false})}}}
+                Box(Modifier.weight(1f)){OutlinedButton({eventMenu=true},Modifier.fillMaxWidth()){Text(eventScope.ifBlank{"All event types"})};DropdownMenu(eventMenu,{eventMenu=false}){DropdownMenuItem({Text("All event types")},{eventScope="";eventMenu=false});allEvents.forEach{e->DropdownMenuItem({Text(e)},{eventScope=e;eventMenu=false})}}}
+            }
+            Text("Showing ${if(subjectScope.isBlank())"all subjects" else subjectScope} and ${if(eventScope.isBlank())"all event types" else eventScope} within the current filters.",style=MaterialTheme.typography.labelSmall)
+        }}}
+        item{Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(6.dp)){DashboardMetric("Records",scoped.size.toString(),Modifier.weight(1f));DashboardMetric("Subjects",scoped.map{it.number}.filter{it.isNotBlank()}.distinct().size.toString(),Modifier.weight(1f));DashboardMetric("Contacts",contacts.size.toString(),Modifier.weight(1f))}}
         item{Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(6.dp)){DashboardMetric("Towers",towers.size.toString(),Modifier.weight(1f));DashboardMetric("IMEI",imeis.size.toString(),Modifier.weight(1f));DashboardMetric("IMSI",imsis.size.toString(),Modifier.weight(1f))}}
         item{Text("Top contacts",style=MaterialTheme.typography.titleMedium)}
         items(contacts.take(12)){e->val tag=tags[e.key];val label=if(tag!=null&&tag.name.isNotBlank())"${tag.name} (${e.key})" else e.key;Column(Modifier.fillMaxWidth().clickable{onOpenContact(e.key)}.padding(vertical=3.dp)){Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween){Text(label,style=MaterialTheme.typography.bodySmall);Text(e.value.toString(),style=MaterialTheme.typography.labelMedium)};LinearProgressIndicator(progress={e.value.toFloat()/maxContact.toFloat()},modifier=Modifier.fillMaxWidth())}}
@@ -39,7 +50,7 @@ fun CdrDashboardScreen(rows:List<CdrRecord>,tags:Map<String,ContactTag>,onOpenCo
         item{Text("Top locations / towers",style=MaterialTheme.typography.titleMedium)}
         items(towers.take(10)){e->ListItem(headlineContent={Text(e.key)},supportingContent={Text("${e.value} record(s)")});HorizontalDivider()}
         item{Text("Device / SIM usage",style=MaterialTheme.typography.titleMedium)}
-        item{Card(Modifier.fillMaxWidth()){Column(Modifier.padding(10.dp)){Text("${imeis.size} unique IMEI • ${imsis.size} unique IMSI");Text("${rows.count{it.imei.isNotBlank()}} rows contain IMEI • ${rows.count{it.imsi.isNotBlank()}} rows contain IMSI",style=MaterialTheme.typography.bodySmall)}}}
+        item{Card(Modifier.fillMaxWidth()){Column(Modifier.padding(10.dp)){Text("${imeis.size} unique IMEI • ${imsis.size} unique IMSI");Text("${scoped.count{it.imei.isNotBlank()}} rows contain IMEI • ${scoped.count{it.imsi.isNotBlank()}} rows contain IMSI",style=MaterialTheme.typography.bodySmall)}}}
         item{Text("Review leads",style=MaterialTheme.typography.titleMedium)}
         item{LazyRow(horizontalArrangement=Arrangement.spacedBy(6.dp)){items(listOf(5,10,15,30)){v->FilterChip(burstMinutes==v,{burstMinutes=v},{Text("${v}m burst")})}}}
         item{LazyRow(horizontalArrangement=Arrangement.spacedBy(6.dp)){items(listOf(3,4,5,8)){v->FilterChip(burstMinimum==v,{burstMinimum=v},{Text("$v events")})}}}
