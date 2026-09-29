@@ -112,7 +112,7 @@ class MainActivity : ComponentActivity() {
    containerColor=MaterialTheme.colorScheme.background,
    topBar={TopAppBar(
     title={Column{Row(verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(8.dp)){Text("CDR Case Analyzer");Badge{Text("v50")}};Text("NEXUS intelligence console • local analysis • XLSX / XLS / CSV",style=MaterialTheme.typography.labelSmall,color=MaterialTheme.colorScheme.onSurfaceVariant)}},
-    actions={TextButton({CdrPrintReport.print(appContext,filtered,summary)},enabled=filtered.isNotEmpty()){Text("Print / PDF")}}
+    actions={if(filtered.isNotEmpty())TextButton({CdrPrintReport.print(appContext,filtered,summary)}){Text("Print / PDF")}}
    )}
   ){p->
    Column(Modifier.padding(p).padding(horizontal=10.dp,vertical=8.dp).fillMaxSize()){
@@ -129,20 +129,34 @@ class MainActivity : ComponentActivity() {
     }
     if(rows.isNotEmpty())Text("${filtered.size} filtered / ${analysisRows.size} analysis / ${rows.size} raw records",style=MaterialTheme.typography.labelSmall,color=MaterialTheme.colorScheme.onSurfaceVariant,modifier=Modifier.padding(vertical=5.dp))
     if(auxiliaryView==null){
-     ScrollableTabRow(selectedTabIndex=tab,edgePadding=0.dp,modifier=Modifier.fillMaxWidth()){primaryTabs.forEachIndexed{i,t->Tab(tab==i,{tab=i;auxiliaryView=null},text={Text(t)})}}
-     Box(Modifier.fillMaxWidth().weight(1f).padding(top=6.dp)){
-      when(tab){
-       0->CdrDashboardScreen(filtered,tags){editNumber=it}
-       1->SiteRecordsScreen(filtered,tags){editNumber=it}
-       2->ExcelViewScreen(rows)
-       3->ContactList(filtered,tags){editNumber=it}
-       4->SiteLocationsScreen(filtered)
-       5->DeviceIntelligenceScreen(filtered)
-       6->SmsIntelligenceScreen(filtered)
-       7->IncidentAnalysisScreen(filtered)
-       8->PatternsScreen(filtered)
-       9->MovementList(filtered)
-       else->MultiNumberAnalysisScreen(filtered)
+     if(rows.isEmpty()){
+      Box(Modifier.fillMaxWidth().weight(1f),contentAlignment=Alignment.Center){
+       Card(Modifier.fillMaxWidth().padding(horizontal=8.dp)){
+        Column(Modifier.padding(18.dp),verticalArrangement=Arrangement.spacedBy(12.dp),horizontalAlignment=Alignment.CenterHorizontally){
+         Text("Start CDR analysis",style=MaterialTheme.typography.headlineSmall)
+         Text("Import one or more XLSX, XLS or CSV CDR files. Analysis stays local on this device.",style=MaterialTheme.typography.bodyMedium)
+         Button({picker.launch(arrayOf("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet","application/vnd.ms-excel","text/csv","text/comma-separated-values","*/*"))},Modifier.fillMaxWidth()){Text("Import CDR Files")}
+         OutlinedButton({auxiliaryView="Cases"},Modifier.fillMaxWidth()){Text("Open Cases / Restore Backup")}
+         Text("No CDR is loaded yet. Dashboard statistics will appear after import.",style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+       }
+      }
+     }else{
+      ScrollableTabRow(selectedTabIndex=tab,edgePadding=0.dp,modifier=Modifier.fillMaxWidth()){primaryTabs.forEachIndexed{i,t->Tab(tab==i,{tab=i;auxiliaryView=null},text={Text(t)})}}
+      Box(Modifier.fillMaxWidth().weight(1f).padding(top=6.dp)){
+       when(tab){
+        0->CdrDashboardScreen(filtered,tags){editNumber=it}
+        1->SiteRecordsScreen(filtered,tags){editNumber=it}
+        2->ExcelViewScreen(rows)
+        3->ContactList(filtered,tags){editNumber=it}
+        4->SiteLocationsScreen(filtered)
+        5->DeviceIntelligenceScreen(filtered)
+        6->SmsIntelligenceScreen(filtered)
+        7->IncidentAnalysisScreen(filtered)
+        8->PatternsScreen(filtered)
+        9->MovementList(filtered)
+        else->MultiNumberAnalysisScreen(filtered)
+       }
       }
      }
     }else{
