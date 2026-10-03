@@ -23,6 +23,19 @@ fun DeviceIntelligenceScreen(rows:List<CdrRecord>){
     var tacCache by remember{mutableStateOf(store.all())}
     var status by remember{mutableStateOf("")}
     val result=remember(rows,tacCache){DeviceIntelligence.build(rows,tacCache)}
+    val remoteLookupKey=remember(rows){rows.map{it.imei.filter(Char::isDigit).take(8)}.filter{it.length==8}.distinct().sorted().joinToString(",")}
+    LaunchedEffect(remoteLookupKey){
+        val missing=rows.map{it.imei.filter(Char::isDigit).take(8)}.filter{it.length==8&&!tacCache.containsKey(it)}.distinct()
+        if(missing.isNotEmpty()){
+            status="Checking ${missing.size} TAC${if(missing.size==1)"" else "s"}…"
+            runCatching{TacDatabaseImporter.fetchRemoteMatches(rows,tacCache)}
+                .onSuccess{matches->
+                    if(matches.isNotEmpty()){store.save(matches);tacCache=store.all();status="Remote TAC matches: ${matches.size}"}
+                    else status="No remote match for ${missing.size} TAC${if(missing.size==1)"" else "s"}"
+                }
+                .onFailure{status="Remote TAC source unavailable"}
+        }
+    }
     val launcher=rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()){uri->
         if(uri!=null)runCatching{TacDatabaseImporter.parse(context.contentResolver,uri)}.onSuccess{entries->store.save(entries);tacCache=store.all();status="Imported ${entries.size} TAC mapping(s) • cache ${tacCache.size}"}.onFailure{status="TAC import failed: ${it.message?:"Unknown error"}"}
     }
