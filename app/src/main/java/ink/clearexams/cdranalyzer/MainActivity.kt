@@ -18,6 +18,9 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.io.InputStream
 import org.apache.poi.ss.usermodel.DataFormatter
 import org.apache.poi.ss.usermodel.Row
@@ -55,19 +58,31 @@ class MainActivity : ComponentActivity() {
   var draftSearch by remember{mutableStateOf("")}
   var draftFilters by remember{mutableStateOf(CdrFilters())}
   var draftDuplicateSafe by remember{mutableStateOf(true)}
+  var importing by remember{mutableStateOf(false)}
+  var importCurrent by remember{mutableIntStateOf(0)}
+  var importTotal by remember{mutableIntStateOf(0)}
+  var importFile by remember{mutableStateOf("")}
+  val importScope=rememberCoroutineScope()
   val appContext=androidx.compose.ui.platform.LocalContext.current
   val caseStore=remember(appContext){CaseWorkspaceStore(appContext)}
   val picker=rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()){uris:List<Uri>->
    if(uris.isNotEmpty()){
-    val imported=mutableListOf<CdrRecord>();val sourceNames=mutableListOf<String>();val warnings=mutableListOf<String>()
-    uris.forEach{uri->
-     runCatching{contentResolver.takePersistableUriPermission(uri,android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)}
-     runCatching{CdrImportParser.parse(contentResolver,uri)}.onSuccess{result->imported+=result.records;sourceNames+=result.sources.map{it.fileName}.distinct();warnings+=result.warnings}.onFailure{warnings+="${uri.lastPathSegment?:"CDR file"}: ${it.message?:"Import failed"}"}
+    importScope.launch{
+     importing=true;importTotal=uris.size;importCurrent=0;importFile="Preparing CDR…"
+     val imported=mutableListOf<CdrRecord>();val sourceNames=mutableListOf<String>();val warnings=mutableListOf<String>()
+     uris.forEachIndexed{index,uri->
+      importCurrent=index+1;importFile=uri.lastPathSegment?:"CDR file"
+      runCatching{contentResolver.takePersistableUriPermission(uri,android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)}
+      val parsed=runCatching{withContext(Dispatchers.IO){CdrImportParser.parse(contentResolver,uri)}}
+      parsed.onSuccess{result->imported+=result.records;sourceNames+=result.sources.map{it.fileName}.distinct();warnings+=result.warnings}
+       .onFailure{warnings+="${uri.lastPathSegment?:"CDR file"}: ${it.message?:"Import failed"}"}
+     }
+     rows=imported
+     fileName=if(sourceNames.isEmpty())"${uris.size} selected file(s)" else "${sourceNames.distinct().size} file(s) • ${imported.size} records"
+     error=warnings.takeIf{it.isNotEmpty()}?.joinToString("\n")
+     cdrFilters=CdrFilters();draftFilters=CdrFilters();search="";draftSearch="";tab=0;auxiliaryView=null;filtersOpen=false
+     importing=false;importFile=""
     }
-    rows=imported
-    fileName=if(sourceNames.isEmpty())"${uris.size} selected file(s)" else "${sourceNames.distinct().size} file(s) • ${imported.size} records"
-    error=warnings.takeIf{it.isNotEmpty()}?.joinToString("\n")
-    cdrFilters=CdrFilters();draftFilters=CdrFilters();search="";draftSearch="";tab=0;auxiliaryView=null;filtersOpen=false
    }
   }
   val analysisRows=remember(rows,duplicateSafe){if(duplicateSafe)duplicateSafeRows(rows) else rows}
@@ -115,6 +130,15 @@ class MainActivity : ComponentActivity() {
      Spacer(Modifier.height(18.dp))
     }
    }
+  }
+
+  if(importing){
+   AlertDialog(
+    onDismissRequest={},
+    confirmButton={},
+    title={Text("Loading ${importCurrent.coerceAtLeast(1)} of ${importTotal.coerceAtLeast(1)}")},
+    text={Column(verticalArrangement=Arrangement.spacedBy(10.dp)){CircularProgressIndicator();Text(importFile.ifBlank{"Preparing CDR…"},style=MaterialTheme.typography.bodySmall)}}
+   )
   }
 
   Scaffold(
