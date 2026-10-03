@@ -155,8 +155,6 @@ class MainActivity : ComponentActivity() {
       OutlinedButton({toolsOpen=true},Modifier.fillMaxWidth()){Text("Tools")}
       DropdownMenu(toolsOpen,{toolsOpen=false}){
        DropdownMenuItem({Text("Cases / Workspace")},{toolsOpen=false;auxiliaryView="Cases"})
-       DropdownMenuItem({Text("Data Quality")},{toolsOpen=false;auxiliaryView="Quality"})
-       DropdownMenuItem({Text("Investigator Notes")},{toolsOpen=false;auxiliaryView="Notes"})
       }
      }
     }
@@ -197,8 +195,6 @@ class MainActivity : ComponentActivity() {
      Box(Modifier.fillMaxWidth().weight(1f)){
       when(auxiliaryView){
        "Cases"->CaseWorkspaceScreen(caseStore,rows,fileName){loaded,name->rows=loaded;fileName=name;search="";cdrFilters=CdrFilters();draftFilters=CdrFilters();tab=0;auxiliaryView=null}
-       "Quality"->DataQualityScreen(rows)
-       else->InvestigationNotesScreen()
       }
      }
     }
