@@ -52,7 +52,7 @@ object CaseBackupManager {
     }
 
     private fun encodeCase(w: CaseWorkspace) = JSONObject().apply {
-        put("id", w.id); put("title", w.title); put("crimeNumber", w.crimeNumber); put("notes", w.notes)
+        put("id", w.id); put("title", w.title); put("crimeNumber", w.crimeNumber); put("notes", w.notes); put("incidentDateTime", w.incidentDateTime)
         put("createdAt", w.createdAt); put("updatedAt", w.updatedAt)
         put("datasets", JSONArray().apply { w.datasets.forEach { put(encodeDataset(it)) } })
     }
@@ -71,7 +71,7 @@ object CaseBackupManager {
         return CaseWorkspace(
             id=o.optString("id",UUID.randomUUID().toString()), title=o.optString("title","Restored case"),
             crimeNumber=o.optString("crimeNumber"), notes=o.optString("notes"), createdAt=o.optLong("createdAt"), updatedAt=o.optLong("updatedAt"),
-            datasets=(0 until ds.length()).map { decodeDataset(ds.getJSONObject(it)) }
+            datasets=(0 until ds.length()).map { decodeDataset(ds.getJSONObject(it)) }, incidentDateTime=o.optString("incidentDateTime")
         )
     }
 
