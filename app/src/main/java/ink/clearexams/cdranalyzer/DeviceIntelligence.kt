@@ -10,6 +10,9 @@ import org.json.JSONObject
 import java.io.BufferedReader
 import java.io.File
 import java.io.InputStreamReader
+import java.net.URL
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 data class TacEntry(val tac:String,val manufacturer:String,val model:String,val deviceType:String="",val os:String="")
 
@@ -74,6 +77,29 @@ object TacDatabaseImporter{
             }
         }
         return out
+    }
+    suspend fun fetchRemoteMatches(rows:List<CdrRecord>,existing:Map<String,TacEntry>):List<TacEntry> = withContext(Dispatchers.IO){
+        val wanted=rows.map{it.imei.filter(Char::isDigit).take(8)}.filter{it.length==8&&!existing.containsKey(it)}.toMutableSet()
+        if(wanted.isEmpty())return@withContext emptyList()
+        val out=mutableListOf<TacEntry>()
+        URL("https://raw.githubusercontent.com/MoazEb/tac-database/main/tac_full.csv").openStream().bufferedReader().use{reader->
+            val first=reader.readLine()?:return@use
+            val header=csv(first).map{it.trim().lowercase().replace(" ","").replace("_","")}
+            val ti=header.indexOf("tac");val bi=header.indexOf("brand");val si=header.indexOf("specs")
+            if(ti<0||bi<0||si<0)throw IllegalArgumentException("Unsupported remote TAC database schema")
+            var line=reader.readLine()
+            while(line!=null&&wanted.isNotEmpty()){
+                if(line.isNotBlank()){
+                    val v=csv(line);val tac=v.getOrElse(ti){""}.filter(Char::isDigit).take(8)
+                    if(tac in wanted){
+                        entry(tac,v.getOrElse(bi){""},v.getOrElse(si){""},"","")?.let(out::add)
+                        wanted.remove(tac)
+                    }
+                }
+                line=reader.readLine()
+            }
+        }
+        out
     }
     private fun entry(t:String,m:String,model:String,d:String,o:String):TacEntry?{val tac=t.filter{it.isDigit()}.take(8);return if(tac.length==8)TacEntry(tac,m.trim(),model.trim(),d.trim(),o.trim()) else null}
     private fun csv(line:String):List<String>{val out=mutableListOf<String>();val b=StringBuilder();var q=false;var i=0;while(i<line.length){val c=line[i];when{c=='"'&&q&&i+1<line.length&&line[i+1]=='"'->{b.append('"');i++};c=='"'->q=!q;c==','&&!q->{out+=b.toString();b.clear()};else->b.append(c)};i++};out+=b.toString();return out}
