@@ -75,11 +75,19 @@ class MainActivity : ComponentActivity() {
       importCurrent=index+1;importFile=uri.lastPathSegment?:"CDR file"
       runCatching{contentResolver.takePersistableUriPermission(uri,android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)}
       val parsed=runCatching{withContext(Dispatchers.IO){CdrImportParser.parse(contentResolver,uri)}}
-      parsed.onSuccess{result->imported+=result.records;sourceNames+=result.sources.map{it.fileName}.distinct();warnings+=result.warnings}
-       .onFailure{warnings+="${uri.lastPathSegment?:"CDR file"}: ${it.message?:"Import failed"}"}
+      parsed.onSuccess{result->
+       imported+=result.records
+       sourceNames+=result.sources.map{it.fileName}.distinct()
+       warnings+=result.warnings
+       if(result.records.isEmpty() && result.warnings.isEmpty()) warnings+="${uri.lastPathSegment?:"CDR file"}: no CDR records found"
+      }.onFailure{warnings+="${uri.lastPathSegment?:"CDR file"}: ${it.message?:"Import failed"}"}
      }
      rows=imported
-     fileName=if(sourceNames.isEmpty())"${uris.size} selected file(s)" else "${sourceNames.distinct().size} file(s) • ${imported.size} records"
+     fileName=when{
+      imported.isNotEmpty()->"${sourceNames.distinct().size.coerceAtLeast(1)} file(s) • ${imported.size} records"
+      warnings.isNotEmpty()->"CDR import failed"
+      else->"${uris.size} selected file(s) • 0 records"
+     }
      error=warnings.takeIf{it.isNotEmpty()}?.joinToString("\n")
      cdrFilters=CdrFilters();draftFilters=CdrFilters();search="";draftSearch="";tab=0;auxiliaryView=null;filtersOpen=false
      importing=false;importFile=""
