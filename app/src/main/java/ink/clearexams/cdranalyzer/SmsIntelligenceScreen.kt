@@ -10,6 +10,9 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import java.text.SimpleDateFormat
+import java.util.Calendar
+import java.util.Locale
 
 @Composable
 fun SmsIntelligenceScreen(rows:List<CdrRecord>) {
@@ -18,15 +21,27 @@ fun SmsIntelligenceScreen(rows:List<CdrRecord>) {
     var mappings by remember{mutableStateOf(store.all())}
     var search by remember{mutableStateOf("")}
     var category by remember{mutableStateOf("")}
+    var subject by remember{mutableStateOf("")}
+    var dateFrom by remember{mutableStateOf("")}
+    var dateTo by remember{mutableStateOf("")}
+    var unusualFrom by remember{mutableStateOf("22:00")}
+    var unusualTo by remember{mutableStateOf("06:00")}
     var unusualOnly by remember{mutableStateOf(false)}
     var firstOnly by remember{mutableStateOf(false)}
     var selected by remember{mutableStateOf<SmsIntelEvent?>(null)}
     var editSender by remember{mutableStateOf<String?>(null)}
     val summary=remember(rows,mappings){SmsIntelligence.build(rows,mappings)}
     val categories=summary.categories.map{it.first}
+    val subjects=remember(summary.events){summary.events.map{it.record.number}.filter{it.isNotBlank()}.distinct().sorted()}
     val filtered=summary.events.filter{e->
+        val ts=e.timestamp
+        val from=smsDateBound(dateFrom,false);val to=smsDateBound(dateTo,true)
+        val unusual=smsWithinTimeWindow(ts,unusualFrom,unusualTo)
         (search.isBlank()||listOf(e.sender,e.label,e.category,e.record.number).any{it.contains(search,true)})&&
-        (category.isBlank()||e.category==category)&&(!unusualOnly||e.unusualTime)&&(!firstOnly||e.firstObserved)
+        (category.isBlank()||e.category==category)&&
+        (subject.isBlank()||e.record.number==subject)&&
+        (from==null||(ts!=null&&ts>=from))&&(to==null||(ts!=null&&ts<=to))&&
+        (!unusualOnly||unusual)&&(!firstOnly||e.firstObserved)
     }
     editSender?.let{sender->
         SmsSenderEditDialog(sender,mappings[sender.uppercase()],onDismiss={editSender=null}){label,cat->
@@ -41,6 +56,21 @@ fun SmsIntelligenceScreen(rows:List<CdrRecord>) {
             SmsMetric("Events",summary.events.size.toString(),Modifier.weight(1f));SmsMetric("Senders",summary.senders.size.toString(),Modifier.weight(1f));SmsMetric("Bursts",summary.bursts.size.toString(),Modifier.weight(1f))
         }}
         item{OutlinedTextField(search,{search=it},label={Text("Search sender / brand / subject")},singleLine=true,modifier=Modifier.fillMaxWidth())}
+        item{
+            Text("Subject / MSISDN",style=MaterialTheme.typography.labelMedium)
+            LazyRow(horizontalArrangement=Arrangement.spacedBy(6.dp)){
+                item{FilterChip(subject.isBlank(),{subject=""},{Text("All subjects")})}
+                items(subjects){s->FilterChip(subject==s,{subject=s},{Text(s)})}
+            }
+        }
+        item{Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(6.dp)){
+            OutlinedTextField(dateFrom,{dateFrom=it},label={Text("From YYYY-MM-DD")},singleLine=true,modifier=Modifier.weight(1f))
+            OutlinedTextField(dateTo,{dateTo=it},label={Text("To YYYY-MM-DD")},singleLine=true,modifier=Modifier.weight(1f))
+        }}
+        item{Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(6.dp)){
+            OutlinedTextField(unusualFrom,{unusualFrom=it},label={Text("Unusual from HH:MM")},singleLine=true,modifier=Modifier.weight(1f))
+            OutlinedTextField(unusualTo,{unusualTo=it},label={Text("Unusual to HH:MM")},singleLine=true,modifier=Modifier.weight(1f))
+        }}
         item{LazyRow(horizontalArrangement=Arrangement.spacedBy(6.dp)){
             item{FilterChip(category.isBlank(),{category=""},{Text("All categories")})}
             items(categories){c->FilterChip(category==c,{category=c},{Text(c)})}
@@ -92,4 +122,13 @@ fun SmsIntelligenceScreen(rows:List<CdrRecord>) {
         Text("${contextRows.size} nearby CDR event(s)",style=MaterialTheme.typography.labelMedium)
         LazyColumn(Modifier.heightIn(max=450.dp)){items(contextRows.take(500)){r->ListItem(headlineContent={Text(r.dateTime.ifBlank{"Time unavailable"})},supportingContent={Text("${r.number} ↔ ${r.otherParty} • ${r.direction} • ${if(r.cellId.isBlank())"tower unavailable" else "${r.lac}/${r.cellId}"}")});HorizontalDivider()}}
     }},confirmButton={TextButton(onDismiss){Text("Back")}})
+}
+
+private fun smsDateBound(value:String,end:Boolean):Long?{if(value.isBlank())return null;return runCatching{val d=SimpleDateFormat("yyyy-MM-dd",Locale.US).apply{isLenient=false}.parse(value.trim())?:return@runCatching null;Calendar.getInstance().apply{time=d;set(Calendar.HOUR_OF_DAY,if(end)23 else 0);set(Calendar.MINUTE,if(end)59 else 0);set(Calendar.SECOND,if(end)59 else 0);set(Calendar.MILLISECOND,if(end)999 else 0)}.timeInMillis}.getOrNull()}
+private fun smsHm(value:String):Int?{val p=value.trim().split(":");if(p.size<2)return null;val h=p[0].toIntOrNull()?:return null;val m=p[1].toIntOrNull()?:return null;return if(h in 0..23&&m in 0..59)h*60+m else null}
+private fun smsWithinTimeWindow(timestamp:Long?,fromText:String,toText:String):Boolean{
+    if(timestamp==null)return false
+    val from=smsHm(fromText)?:return false;val to=smsHm(toText)?:return false
+    val cal=Calendar.getInstance().apply{timeInMillis=timestamp};val minute=cal.get(Calendar.HOUR_OF_DAY)*60+cal.get(Calendar.MINUTE)
+    return if(from<=to)minute in from..to else minute>=from||minute<=to
 }
