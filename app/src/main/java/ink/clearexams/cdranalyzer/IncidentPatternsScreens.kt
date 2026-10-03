@@ -7,18 +7,22 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import java.util.Locale
 
 @Composable
 fun IncidentAnalysisScreen(rows:List<CdrRecord>){
-    var incidentText by remember{mutableStateOf("")};var beforeHours by remember{mutableIntStateOf(6)};var duringMinutes by remember{mutableIntStateOf(30)};var afterHours by remember{mutableIntStateOf(6)}
+    val context=LocalContext.current
+    val incidentPrefs=remember(context){context.getSharedPreferences("cdr_incident_metadata",android.content.Context.MODE_PRIVATE)}
+    var incidentText by remember{mutableStateOf(incidentPrefs.getString("incidentDateTime","").orEmpty())};var beforeHours by remember{mutableIntStateOf(6)};var duringMinutes by remember{mutableIntStateOf(30)};var afterHours by remember{mutableIntStateOf(6)}
     val incident=parseCdrTime(incidentText)
     val result=remember(rows,incident,beforeHours,duringMinutes,afterHours){incident?.let{IncidentAnalysis.build(rows,it,beforeHours,duringMinutes,afterHours)}}
     LazyColumn(Modifier.fillMaxSize(),contentPadding=PaddingValues(vertical=8.dp),verticalArrangement=Arrangement.spacedBy(8.dp)){
         item{Text("Before / During / After Incident",style=MaterialTheme.typography.titleLarge)}
         item{Text("Enter the incident date/time in the same timestamp format used by the CDR, for example 29-09-2026 18:30.",style=MaterialTheme.typography.bodySmall)}
-        item{OutlinedTextField(incidentText,{incidentText=it},label={Text("Incident date/time")},singleLine=true,modifier=Modifier.fillMaxWidth())}
+        item{OutlinedTextField(incidentText,{value->incidentText=value;incidentPrefs.edit().putString("incidentDateTime",value).apply()},label={Text("Incident date/time")},singleLine=true,modifier=Modifier.fillMaxWidth())}
+        item{Text("The incident timestamp is remembered on this device and reused when you return to this analysis.",style=MaterialTheme.typography.labelSmall)}
         item{LazyRow(horizontalArrangement=Arrangement.spacedBy(6.dp)){
             item{Text("Before",modifier=Modifier.padding(top=12.dp))};items(listOf(1,3,6,12,24)){v->FilterChip(beforeHours==v,{beforeHours=v},{Text("${v}h")})}
         }}
