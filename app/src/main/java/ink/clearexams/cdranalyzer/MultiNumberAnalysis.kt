@@ -11,6 +11,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.unit.dp
+import java.text.SimpleDateFormat
+import java.util.Calendar
+import java.util.Locale
 
 data class MultiContact(val number:String,val subjects:List<String>,val records:Int)
 data class MultiLocationEpisode(val tower:String,val start:String,val end:String,val subjects:List<String>,val records:Int,val durationMinutes:Long)
@@ -73,6 +76,7 @@ fun MultiNumberAnalysisScreen(rows:List<CdrRecord>){
             if(result.sharedImsis.isEmpty())item{Text("No shared IMSI across the selected subjects.")}else items(result.sharedImsis.take(100)){m->ListItem(headlineContent={Text(m.value)},supportingContent={Text("${m.records} record(s) • ${m.subjects.joinToString()}")});HorizontalDivider()}
             item{Text("Direct subject relationships",style=MaterialTheme.typography.titleMedium)}
             if(result.directLinks.isEmpty())item{Text("No direct subject-to-subject communication record found.")}else items(result.directLinks){l->ListItem(headlineContent={Text("${l.first} ↔ ${l.second}")},supportingContent={Text("${l.records} direct interaction record(s)")});HorizontalDivider()}
+            item{NumberRelationshipAnalysis(rows)}
         }
     }
 }
@@ -107,3 +111,63 @@ private fun CommunicationNetworkCard(subjects:List<String>,contacts:List<MultiCo
 }
 
 @Composable private fun MultiMetric(label:String,value:String,modifier:Modifier=Modifier){Surface(modifier,tonalElevation=1.dp,shape=MaterialTheme.shapes.small){Column(Modifier.padding(8.dp)){Text(value,style=MaterialTheme.typography.titleMedium);Text(label,style=MaterialTheme.typography.labelSmall)}}}
+
+@Composable
+private fun NumberRelationshipAnalysis(rows:List<CdrRecord>){
+    val subjects=remember(rows){rows.map{it.number}.filter{it.isNotBlank()}.distinct().sorted()}
+    val allNumbers=remember(rows){(rows.map{it.number}+rows.map{it.otherParty}).filter{it.isNotBlank()}.distinct().sorted()}
+    var personA by remember(subjects){mutableStateOf(subjects.firstOrNull().orEmpty())}
+    var personB by remember{mutableStateOf("")}
+    var dateFrom by remember{mutableStateOf("")};var dateTo by remember{mutableStateOf("")};var event by remember{mutableStateOf("")};var nightOnly by remember{mutableStateOf(false)}
+    var aMenu by remember{mutableStateOf(false)};var bMenu by remember{mutableStateOf(false)}
+    val filtered=remember(rows,personA,personB,dateFrom,dateTo,event,nightOnly){
+        val from=relationshipDateBound(dateFrom,false);val to=relationshipDateBound(dateTo,true)
+        rows.filter{r->
+            val pair=((r.number==personA&&r.otherParty==personB)||(r.number==personB&&r.otherParty==personA))
+            val ts=parseCdrTime(r.dateTime);val hour=ts?.let{Calendar.getInstance().apply{timeInMillis=it}.get(Calendar.HOUR_OF_DAY)}
+            pair&&(from==null||(ts!=null&&ts>=from))&&(to==null||(ts!=null&&ts<=to))&&
+                (event.isBlank()||r.direction.contains(event,true))&&(!nightOnly||hour?.let{it>=20||it<6}==true)
+        }
+    }
+    val commonTowers=remember(rows,personA,personB){
+        if(personA.isBlank()||personB.isBlank())emptyList() else {
+            val a=rows.filter{it.number==personA||it.otherParty==personA}.mapNotNull{r->r.cellId.takeIf{it.isNotBlank()}?.let{listOf(r.lac,it).filter{v->v.isNotBlank()}.joinToString("/")}}.toSet()
+            val b=rows.filter{it.number==personB||it.otherParty==personB}.mapNotNull{r->r.cellId.takeIf{it.isNotBlank()}?.let{listOf(r.lac,it).filter{v->v.isNotBlank()}.joinToString("/")}}.toSet()
+            (a intersect b).sorted()
+        }
+    }
+    val sharedImei=remember(rows,personA,personB){sharedIdentifierForPair(rows,personA,personB){it.imei}}
+    val sharedImsi=remember(rows,personA,personB){sharedIdentifierForPair(rows,personA,personB){it.imsi}}
+    Card(Modifier.fillMaxWidth()){
+        Column(Modifier.padding(10.dp),verticalArrangement=Arrangement.spacedBy(8.dp)){
+            Text("Number Relationship Analysis",style=MaterialTheme.typography.titleMedium)
+            Text("Summarizes communication metadata between two numbers. Treat shared towers and identifiers as review leads, not proof of identity, location, association or intent.",style=MaterialTheme.typography.bodySmall)
+            Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(6.dp)){
+                Box(Modifier.weight(1f)){OutlinedButton({aMenu=true},Modifier.fillMaxWidth()){Text(personA.ifBlank{"Person A"})};DropdownMenu(aMenu,{aMenu=false}){subjects.forEach{s->DropdownMenuItem({Text(s)},{personA=s;aMenu=false})}}}
+                Box(Modifier.weight(1f)){OutlinedButton({bMenu=true},Modifier.fillMaxWidth()){Text(personB.ifBlank{"Person B"})};DropdownMenu(bMenu,{bMenu=false}){allNumbers.filter{it!=personA}.take(500).forEach{s->DropdownMenuItem({Text(s)},{personB=s;bMenu=false})}}}
+            }
+            Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(6.dp)){
+                OutlinedTextField(dateFrom,{dateFrom=it},label={Text("From YYYY-MM-DD")},singleLine=true,modifier=Modifier.weight(1f))
+                OutlinedTextField(dateTo,{dateTo=it},label={Text("To YYYY-MM-DD")},singleLine=true,modifier=Modifier.weight(1f))
+            }
+            OutlinedTextField(event,{event=it},label={Text("Event type contains")},singleLine=true,modifier=Modifier.fillMaxWidth())
+            Row(horizontalArrangement=Arrangement.spacedBy(6.dp)){FilterChip(nightOnly,{nightOnly=!nightOnly},{Text("Night only")});OutlinedButton({val t=personA;personA=personB;personB=t}){Text("⇄ Swap")}}
+            if(personA.isBlank()||personB.isBlank())Text("Select Person A and Person B to analyse the pair.",style=MaterialTheme.typography.bodySmall) else {
+                Text("${filtered.size} direct communication record(s)",style=MaterialTheme.typography.labelLarge)
+                Text("Common towers: ${if(commonTowers.isEmpty())"None" else commonTowers.take(20).joinToString()}",style=MaterialTheme.typography.bodySmall)
+                Text("Shared IMEI: ${if(sharedImei.isEmpty())"None" else sharedImei.joinToString()}",style=MaterialTheme.typography.bodySmall)
+                Text("Shared IMSI: ${if(sharedImsi.isEmpty())"None" else sharedImsi.joinToString()}",style=MaterialTheme.typography.bodySmall)
+                if(filtered.isNotEmpty()){
+                    Text("Communication timeline",style=MaterialTheme.typography.titleSmall)
+                    filtered.take(100).forEach{r->Text(listOf(r.dateTime,r.direction,r.duration.takeIf{it.isNotBlank()}?.let{"${it}s"}.orEmpty(),r.cellId.takeIf{it.isNotBlank()}?.let{"Tower ${listOf(r.lac,it).filter{v->v.isNotBlank()}.joinToString("/")}"} .orEmpty()).filter{it.isNotBlank()}.joinToString(" • "),style=MaterialTheme.typography.bodySmall)}
+                }
+            }
+        }
+    }
+}
+private fun relationshipDateBound(value:String,end:Boolean):Long?{if(value.isBlank())return null;return runCatching{val d=SimpleDateFormat("yyyy-MM-dd",Locale.US).apply{isLenient=false}.parse(value.trim())?:return@runCatching null;Calendar.getInstance().apply{time=d;set(Calendar.HOUR_OF_DAY,if(end)23 else 0);set(Calendar.MINUTE,if(end)59 else 0);set(Calendar.SECOND,if(end)59 else 0);set(Calendar.MILLISECOND,if(end)999 else 0)}.timeInMillis}.getOrNull()}
+private fun sharedIdentifierForPair(rows:List<CdrRecord>,a:String,b:String,extract:(CdrRecord)->String):List<String>{
+    if(a.isBlank()||b.isBlank())return emptyList()
+    fun ids(n:String)=rows.filter{it.number==n||it.otherParty==n}.map(extract).filter{it.isNotBlank()}.toSet()
+    return (ids(a) intersect ids(b)).sorted()
+}
