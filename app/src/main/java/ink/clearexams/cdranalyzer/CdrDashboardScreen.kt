@@ -28,7 +28,6 @@ fun CdrDashboardScreen(rows:List<CdrRecord>,tags:Map<String,ContactTag>,onOpenCo
     val hourly=remember(scoped){(0..23).map{h->h to scoped.count{r->parseCdrTime(r.dateTime)?.let{ts->Calendar.getInstance().apply{timeInMillis=ts}.get(Calendar.HOUR_OF_DAY)==h}==true}}}
     val eventTypes=remember(scoped){scoped.groupingBy{dashboardEvent(it.direction)}.eachCount().entries.sortedByDescending{it.value}}
     val leads=remember(scoped,burstMinutes,burstMinimum,longCallSec){dashboardLeads(scoped,burstMinutes,burstMinimum,longCallSec)}
-    val maxContact=(contacts.maxOfOrNull{it.value}?:1).coerceAtLeast(1);val maxHour=(hourly.maxOfOrNull{it.second}?:1).coerceAtLeast(1);val maxType=(eventTypes.maxOfOrNull{it.value}?:1).coerceAtLeast(1)
     LazyColumn(Modifier.fillMaxSize(),contentPadding=PaddingValues(vertical=8.dp),verticalArrangement=Arrangement.spacedBy(8.dp)){
         item{Text("Case dashboard",style=MaterialTheme.typography.titleLarge)}
         item{Card(Modifier.fillMaxWidth()){Column(Modifier.padding(10.dp),verticalArrangement=Arrangement.spacedBy(6.dp)){
@@ -42,11 +41,11 @@ fun CdrDashboardScreen(rows:List<CdrRecord>,tags:Map<String,ContactTag>,onOpenCo
         item{Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(6.dp)){DashboardMetric("Records",scoped.size.toString(),Modifier.weight(1f));DashboardMetric("Subjects",scoped.map{it.number}.filter{it.isNotBlank()}.distinct().size.toString(),Modifier.weight(1f));DashboardMetric("Contacts",contacts.size.toString(),Modifier.weight(1f))}}
         item{Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(6.dp)){DashboardMetric("Towers",towers.size.toString(),Modifier.weight(1f));DashboardMetric("IMEI",imeis.size.toString(),Modifier.weight(1f));DashboardMetric("IMSI",imsis.size.toString(),Modifier.weight(1f))}}
         item{Text("Top contacts",style=MaterialTheme.typography.titleMedium)}
-        items(contacts.take(12)){e->val tag=tags[e.key];val label=if(tag!=null&&tag.name.isNotBlank())"${tag.name} (${e.key})" else e.key;Column(Modifier.fillMaxWidth().clickable{onOpenContact(e.key)}.padding(vertical=3.dp)){Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween){Text(label,style=MaterialTheme.typography.bodySmall);Text(e.value.toString(),style=MaterialTheme.typography.labelMedium)};LinearProgressIndicator(progress={e.value.toFloat()/maxContact.toFloat()},modifier=Modifier.fillMaxWidth())}}
+        items(contacts.take(12)){e->val tag=tags[e.key];val label=if(tag!=null&&tag.name.isNotBlank())"${tag.name} (${e.key})" else e.key;ListItem(headlineContent={Text(label)},trailingContent={Text(e.value.toString())},modifier=Modifier.clickable{onOpenContact(e.key)});HorizontalDivider()}
         item{Text("Activity by hour",style=MaterialTheme.typography.titleMedium)}
-        item{LazyRow(horizontalArrangement=Arrangement.spacedBy(6.dp)){items(hourly){h->Column(Modifier.width(58.dp)){Text("%02d".format(Locale.US,h.first),style=MaterialTheme.typography.labelSmall);LinearProgressIndicator(progress={h.second.toFloat()/maxHour.toFloat()},modifier=Modifier.fillMaxWidth());Text(h.second.toString(),style=MaterialTheme.typography.labelSmall)}}}}
+        items(hourly.filter{it.second>0}){h->ListItem(headlineContent={Text("%02d:00–%02d:59".format(Locale.US,h.first,h.first))},trailingContent={Text(h.second.toString())});HorizontalDivider()}
         item{Text("Event types",style=MaterialTheme.typography.titleMedium)}
-        items(eventTypes.take(12)){e->Column(Modifier.fillMaxWidth().padding(vertical=2.dp)){Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween){Text(e.key,style=MaterialTheme.typography.bodySmall);Text(e.value.toString(),style=MaterialTheme.typography.labelMedium)};LinearProgressIndicator(progress={e.value.toFloat()/maxType.toFloat()},modifier=Modifier.fillMaxWidth())}}
+        items(eventTypes.take(12)){e->ListItem(headlineContent={Text(e.key)},trailingContent={Text(e.value.toString())});HorizontalDivider()}
         item{Text("Top locations / towers",style=MaterialTheme.typography.titleMedium)}
         items(towers.take(10)){e->ListItem(headlineContent={Text(e.key)},supportingContent={Text("${e.value} record(s)")});HorizontalDivider()}
         item{Text("Device / SIM usage",style=MaterialTheme.typography.titleMedium)}
