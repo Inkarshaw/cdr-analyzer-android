@@ -90,14 +90,23 @@ class MainActivity : ComponentActivity() {
       Button({picker.launch(arrayOf("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet","application/vnd.ms-excel","text/csv","text/comma-separated-values","*/*"))},Modifier.fillMaxWidth()){Text("Choose Files")}
       Text(fileName,style=MaterialTheme.typography.bodySmall)
       val loadedFiles=rows.map{it.sourceFile}.filter{it.isNotBlank()}.distinct()
-      loadedFiles.take(8).forEach{Text("• $it",style=MaterialTheme.typography.labelSmall)}
+      loadedFiles.take(8).forEach{source->
+       Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween,verticalAlignment=Alignment.CenterVertically){
+        Text("• $source",style=MaterialTheme.typography.labelSmall,modifier=Modifier.weight(1f))
+        TextButton({
+         rows=rows.filterNot{it.sourceFile==source}
+         val remaining=rows.map{it.sourceFile}.filter{it.isNotBlank()}.distinct()
+         fileName=if(remaining.isEmpty())"No CDR loaded" else "${remaining.size} file(s) • ${rows.size} records"
+         search="";draftSearch="";cdrFilters=CdrFilters();draftFilters=CdrFilters()
+        }){Text("Remove")}
+       }
+      }
       if(loadedFiles.size>8)Text("+${loadedFiles.size-8} more",style=MaterialTheme.typography.labelSmall)
       error?.let{Text(it,color=MaterialTheme.colorScheme.error,style=MaterialTheme.typography.bodySmall)}
       OutlinedButton({rows=emptyList();fileName="No CDR loaded";error=null;search="";draftSearch="";cdrFilters=CdrFilters();draftFilters=CdrFilters()},Modifier.fillMaxWidth(),enabled=rows.isNotEmpty()){Text("Clear Loaded CDRs")}
      }}
      Text("Quick filters",style=MaterialTheme.typography.titleMedium)
      OutlinedTextField(draftSearch,{draftSearch=it},label={Text("Any text")},placeholder={Text("Number, tower, IMEI, name…")},singleLine=true,modifier=Modifier.fillMaxWidth())
-     AnalysisIntegrityCard(rows,draftDuplicateSafe){draftDuplicateSafe=it}
      AdvancedFiltersPanel(draftFilters,rows.map{it.sourceFile}.filter{it.isNotBlank()}.distinct().sorted()){draftFilters=it}
      Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(8.dp)){
       OutlinedButton({draftSearch="";draftFilters=CdrFilters();draftDuplicateSafe=true},Modifier.weight(1f)){Text("Reset")}
@@ -111,7 +120,7 @@ class MainActivity : ComponentActivity() {
   Scaffold(
    containerColor=MaterialTheme.colorScheme.background,
    topBar={TopAppBar(
-    title={Column{Row(verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(8.dp)){Text("CDR Case Analyzer");Badge{Text("v50")}};Text("NEXUS intelligence console • local analysis • XLSX / XLS / CSV",style=MaterialTheme.typography.labelSmall,color=MaterialTheme.colorScheme.onSurfaceVariant)}},
+    title={Column{Row(verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(8.dp)){Text("CDR Case Analyzer");Badge{Text("v60")}};Text("NEXUS intelligence console • local analysis • XLSX / XLS / CSV",style=MaterialTheme.typography.labelSmall,color=MaterialTheme.colorScheme.onSurfaceVariant)}},
     actions={if(filtered.isNotEmpty())TextButton({CdrPrintReport.print(appContext,filtered,summary)}){Text("Print / PDF")}}
    )}
   ){p->
