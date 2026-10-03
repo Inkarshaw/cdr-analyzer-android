@@ -215,10 +215,20 @@ class MainActivity : ComponentActivity() {
  @Composable private fun TowerList(rows:List<CdrRecord>){val t=rows.filter{it.cellId.isNotBlank()}.groupingBy{"${it.lac}/${it.cellId}"}.eachCount().entries.sortedByDescending{it.value};if(t.isEmpty())EmptyFeature("Tower analysis","No Cell ID column was detected.")else SimpleList(t.map{"LAC/Cell ${it.key} — ${it.value} records"})}
 
  @Composable private fun MovementList(rows:List<CdrRecord>){
-  val towerRows=rows.filter{it.cellId.isNotBlank()}
-  if(towerRows.isEmpty()){EmptyFeature("Movement","No tower records were detected in this CDR.");return}
+  val subjects=remember(rows){rows.map{it.number}.filter{it.isNotBlank()}.distinct().sorted()}
+  var subject by remember(subjects){mutableStateOf(subjects.firstOrNull().orEmpty())}
+  val scoped=remember(rows,subject){if(subject.isBlank())rows else rows.filter{it.number==subject}}
+  val towerRows=scoped.filter{it.cellId.isNotBlank()}
+  if(towerRows.isEmpty()){EmptyFeature("Movement","No tower records were detected for the selected CDR subject.");return}
   val visits=towerVisits(towerRows);val transitions=towerTransitions(towerRows);val points=geoPoints(towerRows)
   LazyColumn(Modifier.fillMaxSize()){
+   if(subjects.isNotEmpty())item{
+    Text("CDR / subject",style=MaterialTheme.typography.labelMedium,modifier=Modifier.padding(horizontal=12.dp,vertical=4.dp))
+    LazyRow(contentPadding=PaddingValues(horizontal=12.dp),horizontalArrangement=Arrangement.spacedBy(6.dp)){
+     if(subjects.size>1)item{FilterChip(subject.isBlank(),{subject=""},{Text("All")})}
+     items(subjects){s->FilterChip(subject==s,{subject=s},{Text(s)})}
+    }
+   }
    item{Text("Movement summary",style=MaterialTheme.typography.titleMedium,modifier=Modifier.padding(12.dp))}
    item{Text("Unique towers: ${visits.size} • Tower changes: ${transitions.size} • Mappable records: ${points.size}",modifier=Modifier.padding(horizontal=12.dp,vertical=4.dp))}
    if(points.isEmpty()){item{Text("Map unavailable: no valid latitude/longitude columns were found in this CDR.",modifier=Modifier.padding(12.dp))}}else{
