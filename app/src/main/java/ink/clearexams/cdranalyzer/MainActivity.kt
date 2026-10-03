@@ -120,12 +120,14 @@ class MainActivity : ComponentActivity() {
       error?.let{Text(it,color=MaterialTheme.colorScheme.error,style=MaterialTheme.typography.bodySmall)}
       OutlinedButton({rows=emptyList();fileName="No CDR loaded";error=null;search="";draftSearch="";cdrFilters=CdrFilters();draftFilters=CdrFilters()},Modifier.fillMaxWidth(),enabled=rows.isNotEmpty()){Text("Clear Loaded CDRs")}
      }}
-     Text("Quick filters",style=MaterialTheme.typography.titleMedium)
-     OutlinedTextField(draftSearch,{draftSearch=it},label={Text("Any text")},placeholder={Text("Number, tower, IMEI, name…")},singleLine=true,modifier=Modifier.fillMaxWidth())
-     AdvancedFiltersPanel(draftFilters,rows.map{it.sourceFile}.filter{it.isNotBlank()}.distinct().sorted()){draftFilters=it}
-     Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(8.dp)){
-      OutlinedButton({draftSearch="";draftFilters=CdrFilters();draftDuplicateSafe=true},Modifier.weight(1f)){Text("Reset")}
-      Button({search=draftSearch;cdrFilters=draftFilters;duplicateSafe=draftDuplicateSafe;filtersOpen=false},Modifier.weight(1f)){Text("Apply")}
+     if(rows.isNotEmpty()){
+      Text("Quick filters",style=MaterialTheme.typography.titleMedium)
+      OutlinedTextField(draftSearch,{draftSearch=it},label={Text("Any text")},placeholder={Text("Number, tower, IMEI, name…")},singleLine=true,modifier=Modifier.fillMaxWidth())
+      AdvancedFiltersPanel(draftFilters,rows.map{it.sourceFile}.filter{it.isNotBlank()}.distinct().sorted()){draftFilters=it}
+      Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(8.dp)){
+       OutlinedButton({draftSearch="";draftFilters=CdrFilters();draftDuplicateSafe=true},Modifier.weight(1f)){Text("Reset")}
+       Button({search=draftSearch;cdrFilters=draftFilters;duplicateSafe=draftDuplicateSafe;filtersOpen=false},Modifier.weight(1f)){Text("Apply")}
+      }
      }
      Spacer(Modifier.height(18.dp))
     }
@@ -149,12 +151,14 @@ class MainActivity : ComponentActivity() {
    )}
   ){p->
    Column(Modifier.padding(p).padding(horizontal=10.dp,vertical=8.dp).fillMaxSize()){
-    Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(8.dp)){
-     OutlinedButton({draftSearch=search;draftFilters=cdrFilters;draftDuplicateSafe=duplicateSafe;filtersOpen=true},Modifier.weight(1f)){Text("☰ Filters");Spacer(Modifier.width(6.dp));Badge{Text(activeFilterCount.toString())}}
-     Box(Modifier.weight(1f)){
-      OutlinedButton({toolsOpen=true},Modifier.fillMaxWidth()){Text("Tools")}
-      DropdownMenu(toolsOpen,{toolsOpen=false}){
-       DropdownMenuItem({Text("Cases / Workspace")},{toolsOpen=false;auxiliaryView="Cases"})
+    if(rows.isNotEmpty()){
+     Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(8.dp)){
+      OutlinedButton({draftSearch=search;draftFilters=cdrFilters;draftDuplicateSafe=duplicateSafe;filtersOpen=true},Modifier.weight(1f)){Text("☰ Filters");Spacer(Modifier.width(6.dp));Badge{Text(activeFilterCount.toString())}}
+      Box(Modifier.weight(1f)){
+       OutlinedButton({toolsOpen=true},Modifier.fillMaxWidth()){Text("Tools")}
+       DropdownMenu(toolsOpen,{toolsOpen=false}){
+        DropdownMenuItem({Text("Cases / Workspace")},{toolsOpen=false;auxiliaryView="Cases"})
+       }
       }
      }
     }
