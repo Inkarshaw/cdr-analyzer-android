@@ -6,6 +6,7 @@ import android.provider.OpenableColumns
 import org.apache.poi.ss.usermodel.DataFormatter
 import org.apache.poi.ss.usermodel.Row
 import org.apache.poi.ss.usermodel.WorkbookFactory
+import java.io.BufferedInputStream
 import java.io.BufferedReader
 import java.io.InputStreamReader
 
@@ -69,8 +70,12 @@ object CdrImportParser {
         val output = mutableListOf<CdrRecord>()
         val sources = mutableListOf<CdrSourceSummary>()
         val warnings = mutableListOf<String>()
-        resolver.openInputStream(uri)?.use { stream ->
-            WorkbookFactory.create(stream).use { workbook ->
+        resolver.openInputStream(uri)?.use { rawStream ->
+            // ContentResolver streams from Android's Storage Access Framework are not
+            // guaranteed to support mark/reset. Apache POI's WorkbookFactory requires
+            // a mark-capable InputStream, so always buffer the selected document.
+            BufferedInputStream(rawStream).use { stream ->
+                WorkbookFactory.create(stream).use { workbook ->
                 val formatter = DataFormatter()
                 for (sheetIndex in 0 until workbook.numberOfSheets) {
                     val sheet = workbook.getSheetAt(sheetIndex)
