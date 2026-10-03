@@ -111,6 +111,7 @@ object CdrImportParser {
                     }
                     sources += CdrSourceSummary(fileName, sheet.sheetName, added, map.recognizedCount(), headers.size)
                 }
+                }
             }
         } ?: warnings.add("$fileName: unable to open file")
         if (sources.isEmpty() && warnings.isEmpty()) warnings += "$fileName: no usable worksheet found"
