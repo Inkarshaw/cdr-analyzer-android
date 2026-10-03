@@ -101,6 +101,31 @@ fun CaseWorkspaceScreen(
             if (workspace.datasets.isNotEmpty()) item {
                 Button({ showIdentities = true }, Modifier.fillMaxWidth()) { Text("Manage Number Identities / Roles") }
             }
+            item {
+                var incidentDateTime by remember(workspace.id, workspace.updatedAt) { mutableStateOf(workspace.incidentDateTime) }
+                Card(Modifier.fillMaxWidth()) {
+                    Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Text("Incident Date / Time", style = MaterialTheme.typography.titleSmall)
+                        OutlinedTextField(
+                            incidentDateTime,
+                            { incidentDateTime = it },
+                            label = { Text("DD-MM-YYYY HH:MM") },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        Button(
+                            {
+                                selected = store.updateIncidentDateTime(workspace, incidentDateTime)
+                                context.getSharedPreferences("cdr_incident_metadata", android.content.Context.MODE_PRIVATE)
+                                    .edit().putString("incidentDateTime", incidentDateTime.trim()).apply()
+                                refresh(selected?.id)
+                            },
+                            modifier = Modifier.fillMaxWidth()
+                        ) { Text("Save Incident Time") }
+                        Text("Used automatically by Incident Timeline when this case CDR is opened.", style = MaterialTheme.typography.bodySmall)
+                    }
+                }
+            }
             if (workspace.datasets.isNotEmpty()) item {
                 Card(Modifier.fillMaxWidth()) {
                     Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -174,7 +199,11 @@ fun CaseWorkspaceScreen(
             item { Text("Saved CDRs", style = MaterialTheme.typography.titleMedium) }
             if (workspace.datasets.isEmpty()) item { Text("No CDR saved in this case yet. Import a CDR, then tap Add Current CDR.") }
             else items(workspace.datasets) { dataset ->
-                Card(Modifier.fillMaxWidth().clickable { onLoadDataset(dataset.records, dataset.name) }) {
+                Card(Modifier.fillMaxWidth().clickable {
+                    context.getSharedPreferences("cdr_incident_metadata", android.content.Context.MODE_PRIVATE)
+                        .edit().putString("incidentDateTime", workspace.incidentDateTime).apply()
+                    onLoadDataset(dataset.records, dataset.name)
+                }) {
                     Column(Modifier.padding(12.dp)) {
                         Text(dataset.name, style = MaterialTheme.typography.titleSmall)
                         Text("${dataset.records.size} records", style = MaterialTheme.typography.bodySmall)
