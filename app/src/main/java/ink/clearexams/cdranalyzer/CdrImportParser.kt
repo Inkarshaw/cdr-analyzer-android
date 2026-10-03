@@ -29,6 +29,8 @@ private data class ImportColumnMap(
     val other: Int = -1,
     val direction: Int = -1,
     val dateTime: Int = -1,
+    val date: Int = -1,
+    val time: Int = -1,
     val duration: Int = -1,
     val imei: Int = -1,
     val imsi: Int = -1,
@@ -36,6 +38,7 @@ private data class ImportColumnMap(
     val lac: Int = -1,
     val latitude: Int = -1,
     val longitude: Int = -1,
+    val latLong: Int = -1,
     val towerAddress: Int = -1,
     val mainCity: Int = -1,
     val subCity: Int = -1,
@@ -44,7 +47,7 @@ private data class ImportColumnMap(
     val operator: Int = -1
 ) {
     fun recognizedCount(): Int = listOf(
-        number, other, direction, dateTime, duration, imei, imsi, cell, lac, latitude, longitude,
+        number, other, direction, dateTime, date, time, duration, imei, imsi, cell, lac, latitude, longitude, latLong,
         towerAddress, mainCity, subCity, roaming, provider, operator
     ).count { it >= 0 }
 }
@@ -160,18 +163,22 @@ object CdrImportParser {
         sourceSheet: String,
         value: (Int) -> String
     ): CdrRecord? {
+        val combinedDateTime = value(map.dateTime).ifBlank {
+            listOf(value(map.date), value(map.time)).filter { it.isNotBlank() }.joinToString(" ")
+        }
+        val combinedCoordinates = parseLatLong(value(map.latLong))
         val record = CdrRecord(
             number = value(map.number),
             otherParty = value(map.other),
             direction = value(map.direction),
-            dateTime = value(map.dateTime),
+            dateTime = combinedDateTime,
             duration = value(map.duration),
             imei = value(map.imei),
             imsi = value(map.imsi),
             cellId = value(map.cell),
             lac = value(map.lac),
-            latitude = value(map.latitude),
-            longitude = value(map.longitude),
+            latitude = value(map.latitude).ifBlank { combinedCoordinates?.first?.toString().orEmpty() },
+            longitude = value(map.longitude).ifBlank { combinedCoordinates?.second?.toString().orEmpty() },
             sourceFile = sourceFile,
             sourceSheet = sourceSheet,
             rawRow = raw,
@@ -225,24 +232,38 @@ object CdrImportParser {
     }
 
     private fun detect(headers: List<String>): ImportColumnMap = ImportColumnMap(
-        number = find(headers, "callingnumber", "msisdn", "anumber", "aparty", "subscriber", "cdrnumber", "mobilenumber"),
-        other = find(headers, "callednumber", "otherparty", "bnumber", "bparty", "diallednumber", "connectednumber", "destinationnumber"),
-        direction = find(headers, "calltype", "direction", "eventtype", "type"),
-        dateTime = find(headers, "datetime", "calldatetime", "startdatetime", "starttime", "eventtime", "dateandtime", "date time", "date"),
-        duration = find(headers, "duration", "callduration", "durationsec", "callseconds"),
-        imei = find(headers, "imei", "equipmentidentity"),
-        imsi = find(headers, "imsi", "subscriberidentity"),
-        cell = find(headers, "firstcellid", "cellid", "celltower", "cgi", "firstcgi", "cell"),
-        lac = find(headers, "lac", "locationareacode", "firstlac"),
-        latitude = find(headers, "towerlatitude", "celllatitude", "latitude", "lat"),
-        longitude = find(headers, "towerlongitude", "celllongitude", "longitude", "lng", "lon", "long"),
-        towerAddress = find(headers, "firstaddress", "toweraddress", "celladdress", "locationaddress"),
-        mainCity = find(headers, "maincity", "city"),
-        subCity = find(headers, "subcity", "locality", "area"),
+        number = find(headers, "cdrno", "a party", "aparty", "a-party", "msisdn", "subscriber number", "mobile number", "callingnumber", "anumber", "subscriber", "cdrnumber"),
+        other = find(headers, "b party", "bparty", "b-party", "other party", "connected number", "called number", "calling number", "bnumber", "diallednumber", "destinationnumber"),
+        direction = find(headers, "call type", "event type", "direction", "type"),
+        dateTime = find(headers, "datetime", "call datetime", "start datetime", "date and time"),
+        date = find(headers, "date", "call date", "event date"),
+        time = find(headers, "time", "call time", "event time", "start time"),
+        duration = find(headers, "duration", "call duration", "duration sec", "duration seconds", "callseconds"),
+        imei = find(headers, "imei", "equipment identity"),
+        imsi = find(headers, "imsi", "subscriber identity"),
+        cell = find(headers, "first cell id", "first cellid", "cell id", "first cell", "celltower", "cgi", "firstcgi"),
+        lac = find(headers, "lac", "location area code", "first lac"),
+        latitude = find(headers, "tower latitude", "cell latitude", "latitude"),
+        longitude = find(headers, "tower longitude", "cell longitude", "longitude", "lng", "lon"),
+        latLong = find(headers, "lat-long-azimuth (first cellid)", "lat long azimuth", "lat-long-azimuth", "latitude longitude azimuth", "latlongazimuth"),
+        towerAddress = find(headers, "first cell id address", "first cellid address", "first tower address", "tower address", "cell address", "location address"),
+        mainCity = find(headers, "main city(first cellid)", "main city", "city"),
+        subCity = find(headers, "sub city(first cellid)", "sub city", "subcity", "locality", "area"),
         roaming = find(headers, "roaming"),
-        provider = find(headers, "provider", "serviceprovider", "networkprovider"),
-        operator = find(headers, "operator", "networkoperator")
+        provider = find(headers, "b party provider", "bparty provider", "provider", "service provider", "network provider"),
+        operator = find(headers, "operator", "network operator")
     )
+
+    private fun parseLatLong(value: String): Pair<Double, Double>? {
+        val text = value.trim()
+        if (text.isBlank()) return null
+        val normal = Regex("""(-?\d{1,2}(?:\.\d+)?)\s*[,;|\s]+\s*(-?\d{1,3}(?:\.\d+)?)""").find(text)
+        val hyphen = Regex("""^\s*(\d{1,2}(?:\.\d+)?)\s*-\s*(\d{2,3}(?:\.\d+)?)(?:\s*-\s*\d+(?:\.\d+)?)?\s*$""").find(text)
+        val match = normal ?: hyphen ?: return null
+        val lat = match.groupValues[1].toDoubleOrNull() ?: return null
+        val lon = match.groupValues[2].toDoubleOrNull() ?: return null
+        return if (lat in -90.0..90.0 && lon in -180.0..180.0) lat to lon else null
+    }
 
     private fun parseCsvLine(line: String): List<String> {
         val out = mutableListOf<String>()
