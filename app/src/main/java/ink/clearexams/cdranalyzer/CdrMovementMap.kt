@@ -314,7 +314,6 @@ fun CdrMovementMap(points: List<GeoPoint>, modifier: Modifier = Modifier) {
                 map.invalidate()
             }
         )
-        TowerSequencePlotCard(if(mapFocus!=null)mapFocus!!.points else active)
     };DisposableEffect(Unit){onDispose{playing=false;mapRef?.onDetach()}}
 }
 
