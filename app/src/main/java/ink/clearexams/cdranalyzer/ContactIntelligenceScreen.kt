@@ -27,7 +27,7 @@ import androidx.compose.ui.unit.dp
  * Rows and exported data remain on-device unless the analyst explicitly shares them.
  * [historicalRows] intentionally ignores only the date/time filters; other CDR filters remain.
  */
-private data class ContactInsight(
+internal data class ContactInsight(
     val number: String,
     val records: List<CdrRecord>,
     val calls: Int,
@@ -61,7 +61,7 @@ private fun earlier(a: CdrRecord?, b: CdrRecord): CdrRecord =
 private fun later(a: CdrRecord?, b: CdrRecord): CdrRecord =
     if (a == null || (eventAt(b) ?: Long.MIN_VALUE) > (eventAt(a) ?: Long.MIN_VALUE)) b else a
 
-private fun contactInsights(rows: List<CdrRecord>, history: List<CdrRecord>): List<ContactInsight> {
+internal fun contactInsights(rows: List<CdrRecord>, history: List<CdrRecord>): List<ContactInsight> {
     val earliestCalls = mutableMapOf<String, CdrRecord>()
     history.forEach { r ->
         val n = r.otherParty.trim()
@@ -92,7 +92,7 @@ private fun contactInsights(rows: List<CdrRecord>, history: List<CdrRecord>): Li
         }
 }
 
-private fun orderedContacts(rows: List<ContactInsight>, sort: String): List<ContactInsight> {
+internal fun orderedContacts(rows: List<ContactInsight>, sort: String): List<ContactInsight> {
     val fallback = Comparator<ContactInsight> { a, b -> a.number.compareTo(b.number) }
     return when (sort) {
         "First ↑", "First ↓", "Last ↑", "Last ↓" -> {
@@ -116,7 +116,7 @@ private fun orderedContacts(rows: List<ContactInsight>, sort: String): List<Cont
 }
 
 private fun csvCell(v: String): String = "\"" + v.replace("\"", "\"\"") + "\""
-private fun exportContactsCsv(contacts: List<ContactInsight>, tags: Map<String, ContactTag>): String {
+internal fun exportContactsCsv(contacts: List<ContactInsight>, tags: Map<String, ContactTag>): String {
     val header = listOf("B Party", "Name", "Tag", "Records", "Calls", "Incoming", "Outgoing",
         "SMS", "Duration Seconds", "Historical First Call", "Scoped Last Record", "Towers", "Providers", "Subjects")
     val lines = contacts.map { c ->
