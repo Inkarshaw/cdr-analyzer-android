@@ -96,13 +96,14 @@ class MainActivity : ComponentActivity() {
   }
   val analysisRows=remember(rows,duplicateSafe){if(duplicateSafe)duplicateSafeRows(rows) else rows}
   val advancedFiltered=remember(analysisRows,cdrFilters){applyCdrFilters(analysisRows,cdrFilters)}
+  val historicalContacts=remember(analysisRows,cdrFilters){applyCdrFilters(analysisRows,cdrFilters.copy(dateFrom="",dateTo="",timeFrom="",timeTo=""))}
   val filtered=remember(advancedFiltered,search,tags){if(search.isBlank())advancedFiltered else advancedFiltered.filter{r->val t=tags[r.otherParty]?:tags[r.number];listOf(r.number,r.otherParty,r.direction,r.dateTime,r.imei,r.imsi,r.cellId,r.lac,r.latitude,r.longitude,r.towerAddress,r.mainCity,r.subCity,r.provider,r.operator,r.sourceFile,t?.name.orEmpty(),t?.relation.orEmpty()).any{it.contains(search,true)}}}
   val summary=remember(filtered){Summary(filtered.size,filtered.map{it.otherParty}.filter{it.isNotBlank()}.distinct().size,filtered.count{normalizeDirection(it.direction)=="Incoming"},filtered.count{normalizeDirection(it.direction)=="Outgoing"})}
   val activeFilterCount=remember(search,cdrFilters){
    listOf(cdrFilters.aParty,cdrFilters.bParty,cdrFilters.dateFrom,cdrFilters.dateTo,cdrFilters.timeFrom,cdrFilters.timeTo,cdrFilters.eventType,cdrFilters.imei,cdrFilters.imsi,cdrFilters.cellId,cdrFilters.towerAddress,cdrFilters.city,cdrFilters.subCity,cdrFilters.roaming,cdrFilters.provider,cdrFilters.operator,cdrFilters.sourceFile,cdrFilters.minDuration,cdrFilters.maxDuration).count{it.isNotBlank()} +
     listOf(cdrFilters.callsOnly,cdrFilters.smsOnly,cdrFilters.nightOnly,cdrFilters.weekendOnly,cdrFilters.excludeServiceSenders).count{it} + if(search.isNotBlank())1 else 0
   }
-  val primaryTabs=listOf("Dashboard","Records","Excel View","Contacts","Locations","Devices","SMS Intelligence","Incident Timeline","Patterns","Movement","Multi-number")
+  val primaryTabs=listOf("Dashboard","Records","Excel View","Contacts","Locations","Devices","SMS Intelligence","Incident Timeline","Patterns","Movement","Multi-number","Insights","Data Quality")
 
   if(filtersOpen){
    ModalBottomSheet(onDismissRequest={filtersOpen=false}){
@@ -130,6 +131,7 @@ class MainActivity : ComponentActivity() {
       OutlinedButton({rows=emptyList();fileName="No CDR loaded";error=null;search="";draftSearch="";cdrFilters=CdrFilters();draftFilters=CdrFilters()},Modifier.fillMaxWidth(),enabled=rows.isNotEmpty()){Text("Clear Loaded CDRs")}
      }}
      if(rows.isNotEmpty()){
+      AnalysisIntegrityCard(rows,draftDuplicateSafe){draftDuplicateSafe=it}
       Text("Quick filters",style=MaterialTheme.typography.titleMedium)
       OutlinedTextField(draftSearch,{draftSearch=it},label={Text("Any text")},placeholder={Text("Number, tower, IMEI, name…")},singleLine=true,modifier=Modifier.fillMaxWidth())
       AdvancedFiltersPanel(draftFilters,rows.map{it.sourceFile}.filter{it.isNotBlank()}.distinct().sorted()){draftFilters=it}
@@ -155,7 +157,7 @@ class MainActivity : ComponentActivity() {
   Scaffold(
    containerColor=MaterialTheme.colorScheme.background,
    topBar={TopAppBar(
-    title={Column{Row(verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(8.dp)){Text("CDR Case Analyzer");Badge{Text("v60")}};Text("NEXUS intelligence console • local analysis • XLSX / XLS / CSV",style=MaterialTheme.typography.labelSmall,color=MaterialTheme.colorScheme.onSurfaceVariant)}},
+    title={Column{Row(verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(8.dp)){Text("CDR Case Analyzer");Badge{Text("v61")}};Text("NEXUS intelligence console • local analysis • XLSX / XLS / CSV",style=MaterialTheme.typography.labelSmall,color=MaterialTheme.colorScheme.onSurfaceVariant)}},
     actions={if(filtered.isNotEmpty())TextButton({CdrPrintReport.print(appContext,filtered,summary)}){Text("Print / PDF")}}
    )}
   ){p->
@@ -192,14 +194,16 @@ class MainActivity : ComponentActivity() {
         0->CdrDashboardScreen(filtered,tags){editNumber=it}
         1->SiteRecordsScreen(filtered,tags){editNumber=it}
         2->ExcelViewScreen(rows)
-        3->ContactList(filtered,tags){editNumber=it}
+        3->ContactIntelligenceScreen(filtered,historicalContacts,tags){editNumber=it}
         4->SiteLocationsScreen(filtered)
         5->DeviceIntelligenceScreen(filtered)
         6->SmsIntelligenceScreen(filtered)
         7->IncidentAnalysisScreen(filtered)
         8->PatternsScreen(filtered)
         9->MovementList(filtered)
-        else->MultiNumberAnalysisScreen(filtered)
+        10->MultiNumberAnalysisScreen(filtered)
+        11->InvestigationInsightsScreen(filtered,tags)
+        else->DataQualityScreen(rows)
        }
       }
      }

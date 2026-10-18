@@ -35,5 +35,6 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.7")
     implementation("org.apache.poi:poi-ooxml:5.3.0")
     implementation("org.osmdroid:osmdroid-android:6.1.20")
+    testImplementation("junit:junit:4.13.2")
     debugImplementation("androidx.compose.ui:ui-tooling")
 }
