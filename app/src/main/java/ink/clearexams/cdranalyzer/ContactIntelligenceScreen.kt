@@ -115,7 +115,11 @@ internal fun orderedContacts(rows: List<ContactInsight>, sort: String): List<Con
     }
 }
 
-private fun csvCell(v: String): String = "\"" + v.replace("\"", "\"\"") + "\""
+private fun csvCell(v: String): String {
+    // Spreadsheet applications can execute untrusted formula-looking cells.
+    val escaped = if (v.trimStart().firstOrNull() in listOf('=', '+', '-', '@')) "'" + v else v
+    return "\\"" + escaped.replace("\\"", "\\"\\"") + "\\""
+}
 internal fun exportContactsCsv(contacts: List<ContactInsight>, tags: Map<String, ContactTag>): String {
     val header = listOf("B Party", "Name", "Tag", "Records", "Calls", "Incoming", "Outgoing",
         "SMS", "Duration Seconds", "Historical First Call", "Scoped Last Record", "Towers", "Providers", "Subjects")
