@@ -1,0 +1,41 @@
+name: Build Pocket Paint Android APK
+on:
+  push:
+    branches:
+      - pocket-paint-apk-build
+    paths:
+      - 'pocketpaint-build/**'
+      - '.github/workflows/pocket-paint-build.yml'
+  workflow_dispatch:
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - name: Reconstruct and verify Pocket Paint source
+        run: |
+          cat pocketpaint-build/b64-{0,1,2,3}.txt | base64 --decode > /tmp/pocketpaint-src.tar.xz
+          echo '6ccdac1f75b41a5ba69b4e0749602e4486519436de422673bd443d9dcc970854  /tmp/pocketpaint-src.tar.xz' | sha256sum --check
+          mkdir -p PocketPaint
+          tar -xJf /tmp/pocketpaint-src.tar.xz -C PocketPaint
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+      - name: Install Android SDK 35
+        run: sdkmanager 'platforms;android-35' 'build-tools;35.0.0'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+      - name: Compile installable debug APK
+        working-directory: PocketPaint
+        run: gradle assembleDebug --no-daemon --stacktrace
+      - name: Store installable APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: PocketPaint-debug-APK
+          path: PocketPaint/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
